@@ -45,11 +45,11 @@ LDLIBS   = -lrt -L $(LIBPCE_DIR)/lib -L $(CA3DMM_DIR)/lib  -lpce -lca3dmm
 
 ifeq ($(USE_GPU), 1)
 
-LFLAGS_GPU_HOST = -std=gnu++98,-MMD,-MP,-O3,-g,-march=native
+LFLAGS_GPU_HOST = -std=gnu++98,-MMD,-MP,-O3,-g,-march=native,-fopenmp
 CPPFLAGS += -I $(CUDA_ROOT)/include
 LFLAGS_GPU:=-lcudart -ccbin=mpicxx  -O3 -L$(CUDA_ROOT)/lib64 -lcublas -lcusolver -arch=sm_70 -gencode=arch=compute_70,code=sm_70 -G $(LDLIBS)
 ifeq ($(USE_MKL), 1)
-LFLAGS_GPU_HOST:=$(LFLAGS_GPU_HOST),-mkl
+LFLAGS_GPU_HOST:=$(LFLAGS_GPU_HOST)
 LFLAGS_GPU   += -lmkl_scalapack_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lmkl_blacs_intelmpi_lp64 -lpthread -lm -ldl
 else
 LFLAGS_GPU_HOST:=$(LFALGS_GPU_HOST),-lopenblas
@@ -64,7 +64,7 @@ endif
 ifeq ($(USE_MKL), 1)
 CPPFLAGS += -m64 -I${MKLROOT}/include -DUSE_MKL
 LDFLAGS   = -L${MKLROOT}/lib/intel64
-LDLIBS   += -Wl,--no-as-needed -lmkl_scalapack_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lmkl_blacs_intelmpi_lp64 -lpthread -lm -ldl
+LDLIBS   += -Wl,-rpath=${MKLROOT}/lib/intel64,--no-as-needed -lmkl_scalapack_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lmkl_blacs_intelmpi_lp64 -lpthread -lm -ldl
 else ifeq ($(USE_SCALAPACK), 1)
 CPPFLAGS += -DUSE_SCALAPACK
 LDLIBS   += -lscalapack
@@ -129,5 +129,5 @@ sparc: $(OBJSC) $(LIBPCE_DIR)/lib/libpce.a
 .PHONY: clean
 clean:
 	rm -f  $(OBJSC) $(LIBBASE)
-test: ../.ci/run_tests.py
-	cd $(TESTBASE); ./run_tests.py
+test1: ../tests/test.py
+	cd ../tests; python test.py 

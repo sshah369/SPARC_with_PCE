@@ -10,6 +10,7 @@ typedef struct
     FD_Info* const fd_info;
     Veff_Info* const veff_info;
     NonLocal_Info* const nonlocal_info;
+    //MathLib_Info* lib;
     device_type communication_device;
     device_type compute_device;
     MPI_Comm comm;

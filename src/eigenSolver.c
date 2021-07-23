@@ -259,10 +259,10 @@ void eigSolve_CheFSI(int rank, SPARC_OBJ *pSPARC, int SCFcount, double error,
         //    MPI_Allreduce(MPI_IN_PLACE, &eigmax_g, 1, MPI_DOUBLE, MPI_MAX, pSPARC->spin_bridge_comm);
         //}
         
-        //PCE_Eig_Get(Eigvals, hd, pSPARC->lambda);
 
         pSPARC->Efermi = Calculate_occupation(pSPARC, eigmin_g-1.0, eigmax_g+1.0, 1e-12, 100); 
 
+        //Set the occupation for use by libPCE
         PCE_Occ_Set(Eigvals, hd, pSPARC->occ);
 
         
@@ -339,6 +339,7 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
     // determine the constants for performing chebyshev filtering
     Chebyshevfilter_constants(pSPARC, x0, &lambda_cutoff, &pSPARC->eigmin[spn_i], &pSPARC->eigmax[spn_i], count, k, spn_i);
    
+    //Set the constants for libPCE
     cheb->filter_left = lambda_cutoff;
     cheb->filter_right = pSPARC->eigmax[spn_i];
     cheb->min_eig = pSPARC->eigmin[spn_i];
@@ -373,7 +374,6 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
     #ifdef USE_EVA_MODULE
     if (CheFSI_use_EVA == 1)
     {
-      exit(-1);
         EVA_Chebyshev_Filtering(
             pSPARC, pSPARC->DMVertices_dmcomm, pSPARC->Nband_bandcomm, 
             pSPARC->ChebDegree, lambda_cutoff, pSPARC->eigmax[spn_i], pSPARC->eigmin[spn_i],
@@ -382,37 +382,10 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
     } else {
     #endif
     
-      printf("spn_i: %i, size_s: %i\n", spn_i, size_s);
-
-         // for(int i = 0;  i < hd->local_num_cols * hd->local_num_fd; i++) {
-         //   double res = fabs(fabs(pSPARC->Xorb[i])- fabs(Psi1->data[i]));
-         //   if(res > 1e-12) {
-         //     printf("Xorb EEEK!: %i , %f, %f\n", i, pSPARC->Xorb[i], Psi1->data[i]);
-         //     exit(-1);
-         //   }
-         // }
-         // printf("local num_fd: %i, num_cols: %i, comm dev: %i, comp dev: %i\n",
-         //     hd->local_num_fd, hd->local_num_cols, ham_struct->communication_device,
-         //     ham_struct->compute_device);
-         //pSPARC->ChebDegree=1;
-         //cheb->order=1;
         PCE_Chebyshev_Filter(cheb, (void*)ham_struct, Our_Hamiltonian, hd->local_num_fd,
                              hd->local_num_cols, Psi1, Psi2,
                              ham_struct->communication_device, ham_struct->compute_device, Psi3);
     
-        //  ChebyshevFiltering(pSPARC, pSPARC->DMVertices_dmcomm, pSPARC->Xorb + spn_i*size_s, 
-        //                     pSPARC->Yorb + spn_i*size_s, pSPARC->Nband_bandcomm, 
-        //                     pSPARC->ChebDegree, lambda_cutoff, pSPARC->eigmax[spn_i], pSPARC->eigmin[spn_i], k, spn_i, 
-        //                     pSPARC->dmcomm, &t_temp);
-
-        // for(int i = 0;  i < hd->local_num_cols * hd->local_num_fd; i++) {
-        //   double res = fabs(pSPARC->Yorb[i]- Psi2->data[i]);
-        //   if(res > 1e-12) {
-        //     printf("Yorb EEEK!: %i , %f, %f\n", i, pSPARC->Yorb[i], Psi2->data[i]);
-        //     exit(-1);
-        //   }
-        // }
-        // memcpy(pSPARC->Yorb, Psi2->data, hd->local_num_cols * hd->local_num_fd * sizeof(double));
 
     #ifdef USE_EVA_MODULE
     }
@@ -426,8 +399,11 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
     
     t1 = MPI_Wtime();
     // ** calculate projected Hamiltonian and overlap matrix ** //
+    /* This is the main location which libPCE is used */
     #ifdef USE_DP_SUBEIG
       double b_HY = MPI_Wtime();
+      /* LibPCE uses a the Hamiltonian as a suer specified operator, but provides the functions to use within the operator */
+
       Our_Hamiltonian(ham_struct, Psi2, Psi1, 0);
       double a_HY = MPI_Wtime();
 
@@ -441,7 +417,6 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
       PCE_Mat_Init(&M_s);
 
       // M_s= Psi^T Psi
-      //TODO: Fix comm
       PCE_PsiTPsi(hd, Psi2, &mult_ptp, &M_s, ham_struct->communication_device, ham_struct->compute_device, kptcomm, dmcomm);
 #if USE_GPU
       if(ham_struct->compute_device == DEVICE_TYPE_DEVICE) {
@@ -475,24 +450,9 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
         printf("DP_Project_Hamiltonian, rank 0, DP_Project_Hamiltonian used %.3lf ms\n", 1000.0 * (a_PsiTPsi - b_HY));
     #endif
 
-    //  DP_Project_Hamiltonian(
-    //      pSPARC, pSPARC->DMVertices_dmcomm, pSPARC->Yorb + spn_i*size_s, 
-    //      pSPARC->Hp, pSPARC->Mp, spn_i
-    //  );
       MPI_Barrier(kptcomm);
 
-    // DP_CheFSI_t DP_CheFSI = (DP_CheFSI_t) pSPARC->DP_CheFSI;
-    // if(rank == 0) {
-    //     for(int i = 0;  i < hd->local_num_cols * hd->local_num_cols; i++) {
-    //       double res = fabs(DP_CheFSI->Hp_local[i]- H_s.data[i]);
-    //       if(res > 1e-12) {
-    //         printf("Hp EEEK!: %i , %.15f, %.15f\n", i, DP_CheFSI->Hp_local[i], H_s.data[i]);
-    //         exit(-1);
-    //       }
-    //     }
-    // }
     #else
-      exit(-1);
     Project_Hamiltonian(pSPARC, pSPARC->DMVertices_dmcomm, pSPARC->Yorb + spn_i*size_s, 
                         pSPARC->Hp, pSPARC->Mp, k, spn_i, pSPARC->dmcomm);
     #endif
@@ -511,36 +471,15 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
         gpuErrchk(cudaDeviceSynchronize());
       }
 #endif
-
-
-
-    // DP_Solve_Generalized_EigenProblem(pSPARC, spn_i);
-    //PCE_Eig_Get(Eigvals, hd, pSPARC->lambda);
-
-    // if(rank == 0) {
-    //     for(int i = 0;  i < hd->local_num_cols; i++) {
-    //       double res = fabs(Eigvals->eigval[i]- pSPARC->lambda[i]);
-    //       if(res > 1e-12) {
-    //         printf("Eigvals EEEK!: %i , %.15f, %.15f\n", i, Eigvals->eigval[i], pSPARC->lambda[i]);
-    //         exit(-1);
-    //       }
-    //     }
-    // }
     PCE_Mat_Destroy(&M_s);
 
-    //PCE_Eig_Get(&Eigvals, &hd, pSPARC->lambda);
     #else
-      exit(-1);
     Solve_Generalized_EigenProblem(pSPARC, k, spn_i);
     #endif
     
     t3 = MPI_Wtime();
+    /* Return eigenvalues from libPCE to SPARC */
     PCE_Eig_Get(Eigvals, hd, pSPARC->lambda, kptcomm);
-    // if eigvals are calculated in root process, then bcast the eigvals
-    // if (pSPARC->useLAPACK == 1 && nproc_kptcomm > 1) {
-    //     MPI_Bcast(pSPARC->lambda, pSPARC->Nstates * pSPARC->Nspin_spincomm, 
-    //               MPI_DOUBLE, 0, pSPARC->kptcomm); // TODO: bcast in blacscomm if possible
-    // }
     
     t2 = MPI_Wtime();
     #ifdef DEBUG
@@ -568,16 +507,14 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
     t1 = MPI_Wtime();
     // ** subspace rotation ** //
     #ifdef USE_DP_SUBEIG
-      // DP_Subspace_Rotation(pSPARC, pSPARC->Xorb + spn_i*size_s);
+    /* Perform subspace rotation using libPCE */
 
       ca3dmm_engine_p mult_subsp;
       PCE_Subspace_Rotation(hd, &mult_subsp, Psi2, &H_s, Psi1, ham_struct->communication_device,
                             ham_struct->compute_device, kptcomm, dmcomm);
       PCE_Mat_Destroy(&H_s);
-      printf("ABCD\n");
       ca3dmm_engine_free(&mult_subsp);
     #else
-      exit(-1);
 	// find Y * Q, store the result in Xorb (band+domain) and Xorb_BLCYC (block cyclic format)
 	Subspace_Rotation(pSPARC, pSPARC->Yorb_BLCYC, pSPARC->Q, 
 	                  pSPARC->Xorb_BLCYC, pSPARC->Xorb + spn_i*size_s, k, spn_i);
@@ -587,15 +524,6 @@ void CheFSI(SPARC_OBJ *pSPARC, double lambda_cutoff, double *x0, int count, int 
     if(!rank) printf("Total time for subspace rotation: %.3f ms\n", (t2-t1)*1e3);
     #endif
 
-    // for(int i = 0;  i < hd->local_num_cols * hd->local_num_fd; i++) {
-    //   double res = fabs(fabs(pSPARC->Xorb[i])- fabs(Psi1->data[i]));
-    //   if(res > 1e-12) {
-    //     printf("Xorb EEEK!: %i , %f, %f\n", i, pSPARC->Xorb[i], Psi1->data[i]);
-    //     exit(-1);
-    //   }
-    // }
-
-    //PCE_Psi_Get(Psi1, hd, pSPARC->Xorb);
 }
 
 

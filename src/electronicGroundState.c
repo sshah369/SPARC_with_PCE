@@ -434,6 +434,8 @@ void scf(SPARC_OBJ *pSPARC)
     SCFcount = 0;
 
     // START OF INTEGRATION WITH LIBPCE
+    // The bulk of this code just transfers the data from the SPARC format to
+    // the format that libPCE uses
     Psi_Info Psi1;
     Psi_Info Psi2;
     Psi_Info Psi3;
@@ -453,12 +455,11 @@ void scf(SPARC_OBJ *pSPARC)
     {
       use_gpu = atoi(s_use_gpu);
     }
-    printf("TO USE GPU: %i\n", use_gpu);
+    printf("libPCE: Should use GPU: %i\n", use_gpu);
 
     if (use_gpu)
     {
       compute_device = DEVICE_TYPE_DEVICE;
-      printf("USING GPU\n");
     }
     else
     {
@@ -540,6 +541,8 @@ void scf(SPARC_OBJ *pSPARC)
                                  .do_nonlocal = do_nonlocal,
                                 };
 
+    /* This is where the actual use of libPCE starts */
+    /* If not gamma point, than libPCE doesn't do anything */
     if (pSPARC->isGammaPoint) {
     PCE_Psi_Init(&Psi1);
     PCE_Psi_Init(&Psi2);
@@ -554,7 +557,6 @@ void scf(SPARC_OBJ *pSPARC)
 
     PCE_Veff_Init(&veff_info);
 
-    // TODO: Add this line back in
     SPARC2NONLOCAL_interface(pSPARC, &nl, compute_device); 
     }
 

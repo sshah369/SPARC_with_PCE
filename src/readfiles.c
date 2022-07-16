@@ -64,6 +64,8 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     char *str            = malloc(L_STRING * sizeof(char));
     char *temp           = malloc(L_STRING * sizeof(char));
     int i, Flag_smear_typ = 0, Flag_Temp = 0, Flag_elecT = 0, Flag_ionT = 0, Flag_ionT_end = 0; // Flag_eqT = 0,
+    int Flag_cell = 0;
+    int Flag_latvec_scale = 0;
     int Flag_accuracy = 0;
     int Flag_kptshift = 0;
     int Flag_fdgrid, Flag_ecut, Flag_meshspacing;
@@ -118,9 +120,17 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
             fscanf(input_fp,"%d", &pSPARC_Input->eig_paral_blksz);
             fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"CELL:") == 0) {
+            Flag_cell = 1;
             fscanf(input_fp,"%lf", &pSPARC_Input->range_x);
             fscanf(input_fp,"%lf", &pSPARC_Input->range_y);
             fscanf(input_fp,"%lf", &pSPARC_Input->range_z);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"LATVEC_SCALE:") == 0) {
+            Flag_latvec_scale = 1;
+            pSPARC_Input->Flag_latvec_scale = 1;
+            fscanf(input_fp,"%lf", &pSPARC_Input->latvec_scale_x);
+            fscanf(input_fp,"%lf", &pSPARC_Input->latvec_scale_y);
+            fscanf(input_fp,"%lf", &pSPARC_Input->latvec_scale_z);
             fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"LATVEC:") == 0) {
             fscanf(input_fp, "%*[^\n]\n");
@@ -353,6 +363,12 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
         } else if (strcmpi(str,"PRECOND_KERKER_THRESH:") == 0) {
             fscanf(input_fp,"%lf",&pSPARC_Input->precond_kerker_thresh);
             fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"PRECOND_KERKER_KTF_MAG:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->precond_kerker_kTF_mag);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"PRECOND_KERKER_THRESH_MAG:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->precond_kerker_thresh_mag);
+            fscanf(input_fp, "%*[^\n]\n");
         } /*else if (strcmpi(str,"PRECOND_RESTA_Q0:") == 0) {
             fscanf(input_fp,"%lf",&pSPARC_Input->precond_resta_q0);
             fscanf(input_fp, "%*[^\n]\n");
@@ -389,6 +405,18 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
                 exit(EXIT_FAILURE);
             }
             fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"MIXING_PRECOND_MAG:") == 0) {
+            fscanf(input_fp,"%s",temp); // read mixing preconditioner
+            if (strcmpi(temp,"none") == 0) {
+                pSPARC_Input->MixingPrecondMag = 0;
+            } else if (strcmpi(temp,"kerker") == 0) {
+                pSPARC_Input->MixingPrecondMag = 1;
+            } else {
+                printf("\nCannot recognize mixing preconditioner for magnetization: \"%s\"\n",temp);
+                printf("Available options: \"none\" and \"kerker\" (case insensitive) \n");
+                exit(EXIT_FAILURE);
+            }
+            fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"MIXING_HISTORY:") == 0) {
             fscanf(input_fp,"%d",&pSPARC_Input->MixingHistory);
             fscanf(input_fp, "%*[^\n]\n");
@@ -397,6 +425,12 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
             fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"MIXING_PARAMETER_SIMPLE:") == 0) {
             fscanf(input_fp,"%lf",&pSPARC_Input->MixingParameterSimple);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"MIXING_PARAMETER_MAG:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->MixingParameterMag);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"MIXING_PARAMETER_SIMPLE_MAG:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->MixingParameterSimpleMag);
             fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"PULAY_FREQUENCY:") == 0) {
             fscanf(input_fp,"%d",&pSPARC_Input->PulayFrequency);
@@ -498,11 +532,57 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
         } else if (strcmpi(str,"EXCHANGE_CORRELATION:") == 0) {
             fscanf(input_fp,"%s",pSPARC_Input->XC);  
             fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"D3_FLAG:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->d3Flag);         
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"D3_RTHR:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->d3Rthr);         
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"D3_CN_THR:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->d3Cn_thr);         
+            fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"CALC_STRESS:") == 0) {
             fscanf(input_fp,"%d",&pSPARC_Input->Calc_stress);  
             fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"CALC_PRES:") == 0) {
             fscanf(input_fp,"%d",&pSPARC_Input->Calc_pres);  
+            fscanf(input_fp, "%*[^\n]\n");
+            printf("WARNING: \"CALC_PRES\" is obsolete, use \"CALC_STRESS\" instead!\n");
+        } else if (strcmpi(str,"NPT_SCALE_VECS:") == 0) {
+            int dir[3] = {0, 0, 0};
+            pSPARC_Input->NPTscaleVecs[0] = 0; pSPARC_Input->NPTscaleVecs[1] = 0; pSPARC_Input->NPTscaleVecs[2] = 0; 
+            int scanfResult;
+            scanfResult = fscanf(input_fp,"%d %d %d",&dir[0], &dir[1], &dir[2]);
+            if (scanfResult == -1) {
+                scanfResult = fscanf(input_fp,"%d %d",&dir[0], &dir[1]);
+            }
+            if (scanfResult == -1) {
+                scanfResult = fscanf(input_fp,"%d",&dir[0]);
+            }
+            for (int i = 0; i < 3; i++) {
+                if (dir[i] > 0) pSPARC_Input->NPTscaleVecs[dir[i] - 1] = 1;
+            }
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"NPT_NH_QMASS:") == 0) { 
+            fscanf(input_fp,"%d",&pSPARC_Input->NPT_NHnnos);
+            for (int subscript_NPTNH_qmass = 0; subscript_NPTNH_qmass < pSPARC_Input->NPT_NHnnos; subscript_NPTNH_qmass++){
+                fscanf(input_fp,"%lf",&pSPARC_Input->NPT_NHqmass[subscript_NPTNH_qmass]);
+            }
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"NPT_NH_BMASS:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->NPT_NHbmass);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"TARGET_PRESSURE:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->prtarget);
+            fscanf(input_fp, "%*[^\n]\n");
+	    } else if (strcmpi(str,"NPT_NP_QMASS:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->NPT_NP_qmass);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"NPT_NP_BMASS:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->NPT_NP_bmass);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"VDWDF_GEN_KERNEL:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->vdWDFKernelGenFlag);
             fscanf(input_fp, "%*[^\n]\n");
         } else if(strcmpi(str,"VERBOSITY:") == 0) {
             fscanf(input_fp,"%d",&pSPARC_Input->Verbosity);
@@ -524,6 +604,118 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
             fscanf(input_fp, "%*[^\n]\n");
         } else if (strcmpi(str,"OUTPUT_FILE:") == 0) {    
             fscanf(input_fp,"%s",pSPARC_Input->filename_out);
+            fscanf(input_fp, "%*[^\n]\n");
+        /* exact exchange input options */
+        } else if (strcmpi(str,"TOL_FOCK:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->TOL_FOCK);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"TOL_SCF_INIT:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->TOL_SCF_INIT);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"MAXIT_FOCK:") == 0) {    
+            fscanf(input_fp,"%d",&pSPARC_Input->MAXIT_FOCK);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_METHOD:") == 0) {    
+            fscanf(input_fp,"%s",temp);
+            if (strcmpi(temp,"FOURIER_SPACE") == 0 || strcmpi(temp,"fourier_space") == 0) {
+                pSPARC_Input->EXXMeth_Flag = 0;
+            } else if (strcmpi(temp,"REAL_SPACE") == 0 || strcmpi(temp,"real_space") == 0) {
+                pSPARC_Input->EXXMeth_Flag = 1;
+            } else {
+                printf("\nCannot recognize the method to solve Poisson's equation in Exact Exchange: \"%s\"\n",temp);
+                printf("Please use FOURIER_SPACE or REAL_SPACE.\n");
+                exit(EXIT_FAILURE);
+            }
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"ACE_FLAG:") == 0) {    
+            fscanf(input_fp,"%d",&pSPARC_Input->ACEFlag);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_MEM:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->EXXMem_batch);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_ACE_VALENCE_STATES:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->EXXACEVal_state);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_DOWNSAMPLING:") == 0) {
+            fscanf(input_fp,"%d %d %d",&pSPARC_Input->EXXDownsampling[0],
+                    &pSPARC_Input->EXXDownsampling[1],&pSPARC_Input->EXXDownsampling[2]);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_DIVERGENCE:") == 0) {    
+            fscanf(input_fp,"%s",temp);
+            if (strcmpi(temp,"SPHERICAL") == 0 || strcmpi(temp,"spherical") == 0) {
+                pSPARC_Input->EXXDiv_Flag = 0;
+            } else if (strcmpi(temp,"AUXILIARY") == 0 || strcmpi(temp,"auxiliary") == 0) {
+                pSPARC_Input->EXXDiv_Flag = 1;
+            } else if (strcmpi(temp,"ERFC") == 0 || strcmpi(temp,"erfc") == 0) {
+                pSPARC_Input->EXXDiv_Flag = 2;
+            } else {
+                printf("\nCannot recognize the method for singularity in Exact Exchange: \"%s\"\n",temp);
+                printf("Please use SPHERICAL or AUXILIARY.\n");
+                exit(EXIT_FAILURE);
+            }
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_RANGE_FOCK:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->hyb_range_fock);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"EXX_RANGE_PBE:") == 0) {    
+            fscanf(input_fp,"%lf",&pSPARC_Input->hyb_range_pbe);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"MINIT_FOCK:") == 0) {    
+            fscanf(input_fp,"%d",&pSPARC_Input->MINIT_FOCK);
+            fscanf(input_fp, "%*[^\n]\n");
+        /* SQ input options */
+        } else if (strcmpi(str,"SQ_FLAG:") == 0) {    
+            fscanf(input_fp,"%d",&pSPARC_Input->SQFlag);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_TYPE_DM:") == 0) {    
+            fscanf(input_fp,"%s",temp);
+            if (strcmpi(temp,"CC") == 0 || strcmpi(temp,"cc") == 0) {
+                pSPARC_Input->SQ_typ_dm = 1;
+            } else if (strcmpi(temp,"GAUSS") == 0 || strcmpi(temp,"gauss") == 0) {
+                pSPARC_Input->SQ_typ_dm = 2;
+            } else {
+                printf("Cannot recognize the SQ type for density matrix: \"%s\"\n", temp);
+                printf("Please use GAUSS (gauss) for Gauss quadrature or CC (cc) for Clenshaw-Curtis\n");
+                exit(EXIT_FAILURE);
+            }
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_GAUSS_MEM:") == 0) {    
+            fscanf(input_fp,"%s",temp);
+            if (strcmpi(temp,"LOW") == 0 || strcmpi(temp,"low") == 0) {
+                pSPARC_Input->SQ_gauss_mem = 0;
+            } else if (strcmpi(temp,"HIGH") == 0 || strcmpi(temp,"high") == 0) {
+                pSPARC_Input->SQ_gauss_mem = 1;
+            } else {
+                printf("Cannot recognize the memory option for Gauss Quadrature in density matrix using SQ method: \"%s\"\n", temp);
+                printf("Please use HIGH (high) for high memory option or LOW (low) for low memory option\n");
+                exit(EXIT_FAILURE);
+            }
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_NPL_C:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->SQ_npl_c);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_NPL_G:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->SQ_npl_g);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_EIGSHIFT_FLAG:") == 0) {
+            fscanf(input_fp,"%d",&pSPARC_Input->SQ_EigshiftFlag);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_RCUT:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->SQ_rcut);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_FAC_G2C:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->SQ_fac_g2c);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_TOL_OCC:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->SQ_tol_occ);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"SQ_EIGSHIFT:") == 0) {
+            fscanf(input_fp,"%lf",&pSPARC_Input->SQ_eigshift);
+            fscanf(input_fp, "%*[^\n]\n");
+        } else if (strcmpi(str,"NP_DOMAIN_SQ_PARAL:") == 0) {
+            fscanf(input_fp,"%d", &pSPARC_Input->npNdx_SQ);
+            fscanf(input_fp,"%d", &pSPARC_Input->npNdy_SQ);
+            fscanf(input_fp,"%d", &pSPARC_Input->npNdz_SQ);
             fscanf(input_fp, "%*[^\n]\n");
         } else {
             printf("\nCannot recognize input variable identifier: \"%s\"\n",str);
@@ -577,6 +769,28 @@ void read_input(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     // copy filename into pSPARC struct
     snprintf(pSPARC->filename, L_STRING, "%s", pSPARC_Input->filename);
     
+    // check CELL and LATVEC_SCALE
+    if (Flag_cell == 1 && Flag_latvec_scale == 1) {
+        printf("\nCELL and LATVEC_SCALE cannot be specified simultaneously!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // LACVEC_SCALE takes into account the length of the LATVEC's, so we'll scale the cell lengths
+    if (Flag_latvec_scale == 1) {
+        pSPARC_Input->range_x = pSPARC_Input->latvec_scale_x * sqrt(
+                                + pSPARC_Input->LatVec[0] * pSPARC_Input->LatVec[0]
+                                + pSPARC_Input->LatVec[1] * pSPARC_Input->LatVec[1] 
+                                + pSPARC_Input->LatVec[2] * pSPARC_Input->LatVec[2]);
+        pSPARC_Input->range_y = pSPARC_Input->latvec_scale_y * sqrt(
+                                + pSPARC_Input->LatVec[3] * pSPARC_Input->LatVec[3]
+                                + pSPARC_Input->LatVec[4] * pSPARC_Input->LatVec[4] 
+                                + pSPARC_Input->LatVec[5] * pSPARC_Input->LatVec[5]);
+        pSPARC_Input->range_z = pSPARC_Input->latvec_scale_z * sqrt(
+                                + pSPARC_Input->LatVec[6] * pSPARC_Input->LatVec[6]
+                                + pSPARC_Input->LatVec[7] * pSPARC_Input->LatVec[7] 
+                                + pSPARC_Input->LatVec[8] * pSPARC_Input->LatVec[8]);
+    }
+
     // Isolated cluster can be in orthogonal cell only
     double mult;
     int j;
@@ -926,6 +1140,10 @@ void read_ion(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     // allocate the size of the Isspin vector which stores the spin value of each atom type
     pSPARC->IsSpin = (int *)calloc( pSPARC->Ntypes, sizeof(int) );
     
+    // variables for checking number of inputs in a row
+    int nums_read, array_read_int[10];
+    double array_read_double[10];
+
     while (fscanf(ion_fp,"%s",str) != EOF) {
         // enable commenting with '#'
         if (str[0] == '#' || str[0] == '\n') {
@@ -939,43 +1157,79 @@ void read_ion(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
         } else if (strcmpi(str, "N_TYPE_ATOM:") == 0) {
             fscanf(ion_fp, "%*[^\n]\n"); // skip current line
         } else if (strcmpi(str, "COORD:") == 0) {
-            fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            // fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            check_below_entries(ion_fp, "COORD");
             for (i = 0; i < pSPARC->nAtomv[typcnt]; i++) {
-                fscanf(ion_fp,"%lf", pSPARC->atom_pos+3*atmcnt_coord);
-                fscanf(ion_fp,"%lf", pSPARC->atom_pos+3*atmcnt_coord+1);
-                fscanf(ion_fp,"%lf", pSPARC->atom_pos+3*atmcnt_coord+2);
-                fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+                nums_read = check_num_input(ion_fp, (void *) array_read_double, 'D');
+                if (nums_read == -1) { i --; continue; }   // This is comment
+                if (nums_read == 0) {
+                    printf(RED "ERROR: Number of atom coordinates is less than number of atoms for atom type %d.\n" RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                } else if (nums_read != 3)  { 
+                    printf(RED "ERROR: please provide 3 coordinates on x y z for each atom of atom type %d in a row.\n" RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                }
+                pSPARC->atom_pos[3*atmcnt_coord] = array_read_double[0];
+                pSPARC->atom_pos[3*atmcnt_coord+1] = array_read_double[1];
+                pSPARC->atom_pos[3*atmcnt_coord+2] = array_read_double[2];
                 atmcnt_coord++;  
             }
         } else if (strcmpi(str, "COORD_FRAC:") == 0) {
-            fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            // fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            check_below_entries(ion_fp, "COORD_FRAC");
             for (i = 0; i < pSPARC->nAtomv[typcnt]; i++) {
-                fscanf(ion_fp,"%lf", pSPARC->atom_pos+3*atmcnt_coord);
+                nums_read = check_num_input(ion_fp, (void *) array_read_double, 'D');
+                if (nums_read == -1) { i --; continue; }   // This is comment
+                if (nums_read == 0) {
+                    printf(RED "ERROR: Number of atom coordinates is less than number of atoms for atom type %d.\n" RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                } else if (nums_read != 3)  { 
+                    printf(RED "ERROR: please provide 3 coordinates on x y z for each atom of atom type %d in a row.\n" RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                }
+                pSPARC->atom_pos[3*atmcnt_coord] = array_read_double[0];
+                pSPARC->atom_pos[3*atmcnt_coord+1] = array_read_double[1];
+                pSPARC->atom_pos[3*atmcnt_coord+2] = array_read_double[2];
                 pSPARC->atom_pos[3*atmcnt_coord] *= pSPARC_Input->range_x;
-                fscanf(ion_fp,"%lf", pSPARC->atom_pos+3*atmcnt_coord+1);
                 pSPARC->atom_pos[3*atmcnt_coord+1] *= pSPARC_Input->range_y;
-                fscanf(ion_fp,"%lf", pSPARC->atom_pos+3*atmcnt_coord+2);
                 pSPARC->atom_pos[3*atmcnt_coord+2] *= pSPARC_Input->range_z;
-                fscanf(ion_fp, "%*[^\n]\n"); // skip current line
                 atmcnt_coord++;  
             }
             pSPARC->IsFrac[typcnt] = 1;
         } else if (strcmpi(str, "RELAX:") == 0) {
-            fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            // fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            check_below_entries(ion_fp, "RELAX");
             atmcnt_relax = atmcnt_cum[typcnt];
             for (i = 0; i < pSPARC->nAtomv[typcnt]; i++) {
-                fscanf(ion_fp,"%d", pSPARC->mvAtmConstraint+3*atmcnt_relax);
-                fscanf(ion_fp,"%d", pSPARC->mvAtmConstraint+3*atmcnt_relax+1);
-                fscanf(ion_fp,"%d", pSPARC->mvAtmConstraint+3*atmcnt_relax+2);
-                fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+                nums_read = check_num_input(ion_fp, (void *) array_read_int, 'I');
+                if (nums_read == -1) { i --; continue; }   // This is comment
+                if (nums_read == 0) {
+                    printf(RED "ERROR: Number of relaxation flag is less than number of atoms for atom type %d.\n" RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                } else if (nums_read != 3)  { 
+                    printf(RED "ERROR: please provide 3 relaxation flag on x y z directions for each atom of atom type %d in a row.\n"RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                }
+                pSPARC->mvAtmConstraint[3*atmcnt_relax] = array_read_int[0];
+                pSPARC->mvAtmConstraint[3*atmcnt_relax+1] = array_read_int[1];
+                pSPARC->mvAtmConstraint[3*atmcnt_relax+2] = array_read_int[2];
                 atmcnt_relax++;
             }
         } else if (strcmpi(str, "SPIN:") == 0) {
-            fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            // fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+            check_below_entries(ion_fp, "SPIN");
             atmcnt_spin = atmcnt_cum[typcnt];
             for (i = 0; i < pSPARC->nAtomv[typcnt]; i++) {
-                fscanf(ion_fp,"%lf", pSPARC->atom_spin + atmcnt_spin);
-                fscanf(ion_fp, "%*[^\n]\n"); // skip current line
+                nums_read = check_num_input(ion_fp, (void *) array_read_double, 'D');
+                if (nums_read == -1) { i --; continue; }   // This is comment
+                if (nums_read == 0) {
+                    printf(RED "ERROR: Number of initial spin is less than number of atoms for atom type %d.\n" RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                } else if (nums_read != 1)  { 
+                    printf(RED "ERROR: please provide 1 initial spin for each atom of atom type %d in a row.\n"RESET, typcnt+1);
+                    exit(EXIT_FAILURE);
+                }
+                pSPARC->atom_spin[atmcnt_spin] = array_read_double[0];
                 atmcnt_spin++;
             }
             pSPARC->IsSpin[typcnt] = 1;
@@ -1037,7 +1291,7 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
 #ifdef DEBUG
     printf("Reading pseudopotential (PSP) file.\n");
 #endif
-    int jj, kk, l, ityp, *lpos, lmax, nproj;
+    int jj, kk, l, ityp, *lpos, *lpos_soc, lmax, nproj, nproj_soc;
     char *str          = malloc(L_PSD * sizeof(char));
     char *INPUT_DIR    = malloc(L_PSD * sizeof(char));
     char *psd_filename = malloc(L_PSD * sizeof(char));
@@ -1066,7 +1320,7 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
     for (ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
         if (pSPARC->is_default_psd) { 
             // use default pseudopotential files
-            snprintf(psd_filename, L_PSD, "%s/psdpots/%s.psp8", pSPARC_Input->SPARCROOT, 
+            snprintf(psd_filename, L_PSD, "%s/psps/%s.psp8", pSPARC_Input->SPARCROOT, 
                                                     &pSPARC->atomType[ityp*L_ATMTYPE]);
             snprintf(&pSPARC->psdName[ityp*L_PSD], L_PSD, "%s", psd_filename);
         } else {
@@ -1107,7 +1361,7 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
         printf("Input element type: %s\n", elemType);
 #endif
         if (strcmpi(str,elemType) != 0) {
-            printf("\nError: Pseudopotential file %s does not match with input atom type %s!\n",
+            printf("\nERROR: Pseudopotential file %s does not match with input atom type %s!\n",
             psd_filename, &pSPARC->atomType[ityp*L_ATMTYPE]);
             exit(EXIT_FAILURE);
         }
@@ -1138,6 +1392,35 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
         pSPARC->psd[ityp].ppl = (int *)calloc((lmax+1), sizeof(int));
         lpos = (int *)calloc((lmax+2), sizeof(int)); // the last value stores the total number of projectors for this l
         pSPARC->psd[ityp].rc = (double *)malloc((lmax+1) * sizeof(double));        
+        pSPARC->psd[ityp].pspsoc = 0;   // default no spin-orbit coupling
+
+        // check spin-orbit coupling (SOC)
+        do {
+            fscanf(psd_fp,"%s",str);
+        } while (strcmpi(str,"nproj"));
+        int ext_sw;
+        fscanf(psd_fp,"%d",&ext_sw); 
+        if (ext_sw == 2 || ext_sw == 3) {
+            pSPARC->psd[ityp].pspsoc = 1;
+        #ifdef DEBUG
+            printf(GRN "This pseudopotential includes spin-orbit coupling.\n" RESET);
+        #endif
+            lpos_soc = (int *)calloc((lmax+1), sizeof(int)); // the last value stores the total number of projectors for this l
+        }
+        
+        // Check the scientific notation of floating point number 
+        char notation = '\0';
+        int num = 0;
+        do {
+            fscanf(psd_fp,"%s",str);
+            num = sscanf(str,"%*d.%*d%[A-Za-z]%*d", &notation);        // finding the first scientific notation
+        } while (num != 1);
+        if (notation != 'E' && notation != 'e') {
+            printf(RED"\nERROR: SPARC does not support the use of D for scientific notation.\n"
+                   "       Please run sed -i -e 's/%c-/E-/g' -e 's/%c+/E+/g' *.psp8 in the\n"
+                   "       pseudopotential directory to convert to a compatible scientific notation\n"RESET, notation, notation);
+            exit(EXIT_FAILURE);
+        }
         
         // reset file pointer to the start of the file
         fseek(psd_fp, 0L, SEEK_SET);  // returns 0 if succeeded, can use to check status
@@ -1164,16 +1447,29 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
         }
         nproj = lpos[lmax+1]; 
         
-        do {
-            fscanf(psd_fp,"%s",str);
-        } while (strcmpi(str,"extension_switch"));
-        
         // allocate memory
         pSPARC->psd[ityp].RadialGrid = (double *)calloc(pSPARC->psd[ityp].size , sizeof(double)); 
         pSPARC->psd[ityp].UdV = (double *)calloc(nproj * pSPARC->psd[ityp].size , sizeof(double)); 
         pSPARC->psd[ityp].rVloc = (double *)calloc(pSPARC->psd[ityp].size , sizeof(double)); 
         pSPARC->psd[ityp].rhoIsoAtom = (double *)calloc(pSPARC->psd[ityp].size , sizeof(double)); 
         pSPARC->psd[ityp].Gamma = (double *)calloc(nproj , sizeof(double)); 
+
+        do {
+            fscanf(psd_fp,"%s",str);
+        } while (strcmpi(str,"extension_switch"));
+
+        if (pSPARC->psd[ityp].pspsoc == 1) {
+            pSPARC->psd[ityp].ppl_soc = (int *)calloc(lmax, sizeof(int));
+            lpos_soc[0] = 0;
+            for (l = 1; l <= lmax; l++) {
+                fscanf(psd_fp,"%d",&pSPARC->psd[ityp].ppl_soc[l-1]);
+                lpos_soc[l] = lpos_soc[l-1] + pSPARC->psd[ityp].ppl_soc[l-1];
+            }
+            nproj_soc = lpos_soc[lmax]; 
+            pSPARC->psd[ityp].Gamma_soc = (double *)calloc(nproj_soc , sizeof(double)); 
+            pSPARC->psd[ityp].UdV_soc = (double *)calloc(nproj_soc * pSPARC->psd[ityp].size , sizeof(double)); 
+            fscanf(psd_fp, "%*[^\n]\n"); // skip current line
+        }
         
         // start reading projectors
         int l_read = 0;
@@ -1233,6 +1529,29 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
             fseek (psd_fp, -1*4, SEEK_CUR ); // move back 4 columns
         }  
 
+        if (pSPARC->psd[ityp].pspsoc == 1) {
+            for (l = 1; l <= pSPARC->psd[ityp].lmax; l++) {
+                fscanf(psd_fp,"%d",&l_read); 
+                if (l != pSPARC->localPsd[ityp]) {
+                    for (kk = 0; kk < pSPARC->psd[ityp].ppl_soc[l-1]; kk++) {
+                        fscanf(psd_fp,"%lf", &vtemp);
+                        pSPARC->psd[ityp].Gamma_soc[lpos_soc[l-1]+kk] = vtemp;
+                    }
+                    for (jj = 0; jj < pSPARC->psd[ityp].size; jj++) {
+                        fscanf(psd_fp,"%lf", &vtemp);
+                        fscanf(psd_fp,"%lf", &vtemp);
+                        pSPARC->psd[ityp].RadialGrid[jj] = vtemp;
+                        for (kk = 0; kk < pSPARC->psd[ityp].ppl_soc[l-1]; kk++) {
+                            fscanf(psd_fp,"%lf",&vtemp);
+                            pSPARC->psd[ityp].UdV_soc[(lpos_soc[l-1]+kk)*pSPARC->psd[ityp].size+jj] = vtemp/pSPARC->psd[ityp].RadialGrid[jj];
+                        }
+                    }
+                    for (kk = 0; kk < pSPARC->psd[ityp].ppl_soc[l-1]; kk++)
+                        pSPARC->psd[ityp].UdV_soc[(lpos_soc[l-1]+kk)*pSPARC->psd[ityp].size] = pSPARC->psd[ityp].UdV_soc[(lpos[l-1]+kk)*pSPARC->psd[ityp].size+1];
+                }
+            }
+        }
+
         // read model core charge for NLCC
         pSPARC->psd[ityp].rho_c_table = (double *)calloc(pSPARC->psd[ityp].size, sizeof(double));
         if (fchrg > TEMP_TOL) {
@@ -1279,7 +1598,7 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
             dr_j = pSPARC->psd[ityp].RadialGrid[jj] - pSPARC->psd[ityp].RadialGrid[jj-1];
             // check if dr is 0
             if (fabs(dr_j) < TEMP_TOL) {
-                printf("\nError: repeated radial grid values in pseudopotential (%s)!\n\n", psd_filename);
+                printf("\nERROR: repeated radial grid values in pseudopotential (%s)!\n\n", psd_filename);
                 exit(EXIT_FAILURE);
             }
             // check if mesh is uniform
@@ -1303,9 +1622,27 @@ void read_pseudopotential_PSP(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC)
         // close the file
         fclose(psd_fp);
         free(lpos);
+        if (pSPARC->psd[ityp].pspsoc == 1)
+            free(lpos_soc);
     }
     free(str);
     free(INPUT_DIR);
     free(psd_filename);
     free(simp_path);
+
+    // check spin-orbit coupling psps.
+    int soc_count = 0;
+    for (ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
+        soc_count += pSPARC->psd[ityp].pspsoc;
+    }
+    if (soc_count == 0) {
+        pSPARC->Nspinor = 1;
+        pSPARC->SOC_Flag = 0;
+    } else if (soc_count == pSPARC->Ntypes) {
+        pSPARC->Nspinor = 2;
+        pSPARC->SOC_Flag = 1;
+    } else {
+        printf(RED "ERROR: Please provide fully relativistic pseudopotential for all types of atoms!\n" RESET);
+        exit(EXIT_FAILURE);
+    }
 }

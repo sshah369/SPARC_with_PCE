@@ -22,13 +22,13 @@ The tests use the "sparc" executable inside the "lib" folder.
 
 bulk, surface, wire, molecule
 orth, nonorth
-lda, gga
+lda, gga, scan
 potmix denmix kerker
 smear_gauss, smear_fd
 relax_atom_nlcg, relax_atom_lbfgs, relax_atom_fire
 relax_cell
 relax_total_nlcg, relax_total_lbfgs, relax_total_fire
-md_nvtnh, md_nvkg, md_nve
+md_nvtnh, md_nvkg, md_nve, md_npt
 gamma, kpt
 nlcc
 spin
@@ -36,6 +36,12 @@ diff_length, diff_mesh
 memcheck, memused
 serial
 VHQ
+run_local, valgrind_all
+bandgap
+d3, vdWDF
+PBE0, HSE
+SOC
+SQ
 
 
 3) To add a system:
@@ -54,3 +60,9 @@ Follow following steps:
 	sed -n '/Details for the Failed systems/,/End for the Failed systems/p' Report.txt > Fail_file
 
 	sed -n '/Details for the Passed systems/,/End for the Passed systems/p' Report.txt > Pass_file
+
+5) To clean all the tesm_run files use the following command:
+	$ python test.py clean_temp
+
+6) If the testing framework has run once, to only run the check against the reference output files
+	$ python test.py temp_present

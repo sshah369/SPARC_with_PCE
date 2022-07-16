@@ -37,6 +37,17 @@
 #include "forces.h"
 #include "stress.h"
 #include "pressure.h"
+#include "exactExchange.h"
+#include "d3correction.h"
+#include "d3forceStress.h"
+#include "spinOrbitCoupling.h"
+#include "sq.h"
+#include "sqFinalization.h"
+#include "sqEnergy.h"
+#include "sqDensity.h"
+#include "sqProperties.h"
+#include "sqParallelization.h"
+#include "sqNlocVecRoutines.h"
 
 #include <libpce.h>
 #include <vnl_mod.h>
@@ -63,13 +74,50 @@ void Calculate_electronicGroundState(SPARC_OBJ *pSPARC) {
     if (rank == 0) printf("Start ground-state calculation.\n");
 #endif
     
+    // Check if Reference Cutoff > 0.5 * nearest neighbor distance
+    // Check if Reference Cutoff < mesh spacing
+    if (rank == 0) {
+        double nn = compute_nearest_neighbor_dist(pSPARC, 'N');
+        int SCF_ind;
+        if (pSPARC->MDFlag == 1)
+            SCF_ind = pSPARC->MDCount + pSPARC->restartCount + (pSPARC->RestartFlag == 0);
+        else if(pSPARC->RelaxFlag >= 1)
+            SCF_ind = pSPARC->RelaxCount + pSPARC->restartCount + (pSPARC->RestartFlag == 0);
+        else
+            SCF_ind = 1;
+        if (pSPARC->REFERENCE_CUTOFF > 0.5*nn) {
+            printf("\nWARNING: REFERENCE _CUFOFF (%.6f Bohr) > 1/2 nn (nearest neighbor) distance (%.6f Bohr) in SCF#%d\n",
+                        pSPARC->REFERENCE_CUTOFF, 0.5*nn,  SCF_ind);
+        }
+        if (pSPARC->REFERENCE_CUTOFF < pSPARC->delta_x ||
+            pSPARC->REFERENCE_CUTOFF < pSPARC->delta_y ||
+            pSPARC->REFERENCE_CUTOFF < pSPARC->delta_z ) {
+            printf("\nWARNING: REFERENCE _CUFOFF (%.6f Bohr) < MESH_SPACING (dx %.6f Bohr, dy %.6f Bohr, dz %.6f Bohr) in SCF#%d\n",
+                        pSPARC->REFERENCE_CUTOFF, pSPARC->delta_x, pSPARC->delta_y, pSPARC->delta_z, SCF_ind );
+        }
+    }
+    
 	// initialize the history variables of Anderson mixing
 	if (pSPARC->dmcomm_phi != MPI_COMM_NULL) {
 	    memset(pSPARC->mixing_hist_Xk, 0, sizeof(double)* pSPARC->Nd_d * pSPARC->Nspin * pSPARC->MixingHistory);
 	    memset(pSPARC->mixing_hist_Fk, 0, sizeof(double)* pSPARC->Nd_d * pSPARC->Nspin * pSPARC->MixingHistory);
     }
+
+    if ((pSPARC->mGGAflag == 1) || (pSPARC->vdWDFFlag != 0)) { // initialize the SCF time counter for vdWDF and SCAN
+        pSPARC->countSCF = 0;
+    }
     
     Calculate_EGS_elecDensEnergy(pSPARC);
+
+    // DFT-D3 correction
+    if (pSPARC->d3Flag == 1) {
+        t1 = MPI_Wtime();
+        d3_energy_gradient(pSPARC);
+        t2 = MPI_Wtime();
+        #ifdef DEBUG
+            if (rank == 0) printf("Time for D3 calculation:    %.3f (sec)\n",t2-t1);
+        #endif
+    }
 
     // write energies into output file   
     if (!rank && pSPARC->Verbosity) {
@@ -88,6 +136,12 @@ void Calculate_electronicGroundState(SPARC_OBJ *pSPARC) {
         fprintf(output_fp,"Self and correction energy         :%18.10E (Ha)\n", pSPARC->Esc);
         fprintf(output_fp,"Entropy*kb*T                       :%18.10E (Ha)\n", pSPARC->Entropy);
         fprintf(output_fp,"Fermi level                        :%18.10E (Ha)\n", pSPARC->Efermi);
+        if (pSPARC->d3Flag == 1) {
+        	fprintf(output_fp,"DFT-D3 correction                  :%18.10E (Ha)\n", pSPARC->d3Energy[0]);
+        }
+        if (pSPARC->vdWDFFlag != 0) {
+            fprintf(output_fp,"vdWDF energy                       :%18.10E (Ha)\n", pSPARC->vdWDFenergy);
+        }
         fclose(output_fp);
         // for static calculation, print energy to .static file
         if (pSPARC->MDFlag == 0 && pSPARC->RelaxFlag == 0) {
@@ -106,6 +160,7 @@ void Calculate_electronicGroundState(SPARC_OBJ *pSPARC) {
     t1 = MPI_Wtime();
     // calculate forces
     Calculate_EGS_Forces(pSPARC);
+    if (pSPARC->d3Flag == 1) add_d3_forces(pSPARC);
     t2 = MPI_Wtime();
     
     // write forces into .static file if required
@@ -148,6 +203,7 @@ void Calculate_electronicGroundState(SPARC_OBJ *pSPARC) {
     if(pSPARC->Calc_stress == 1){
         t1 = MPI_Wtime();
         Calculate_electronic_stress(pSPARC);
+        // if (pSPARC->d3Flag == 1) d3_grad_cell_stress(pSPARC); // move this function into Calculate_electronic_stress?
         t2 = MPI_Wtime();
         if(!rank && pSPARC->Verbosity) {
             // write stress to .static file
@@ -183,6 +239,7 @@ void Calculate_electronicGroundState(SPARC_OBJ *pSPARC) {
     } else if(pSPARC->Calc_pres == 1){
         t1 = MPI_Wtime();
         Calculate_electronic_pressure(pSPARC);
+        // if (pSPARC->d3Flag == 1) d3_grad_cell_stress(pSPARC); // add the D3 contribution on pressure to total pressure. move this function into Calculate_electronic_pressure?
         t2 = MPI_Wtime();
         if(!rank && pSPARC->Verbosity) {
         	output_fp = fopen(pSPARC->OutFilename,"a");
@@ -206,7 +263,11 @@ void Calculate_electronicGroundState(SPARC_OBJ *pSPARC) {
 	}
 	
 	// Free the scf variables
-	Free_scfvar(pSPARC);
+    if (pSPARC->SQFlag == 1) {
+        Free_scfvar_SQ(pSPARC);
+    } else {
+        Free_scfvar(pSPARC);
+    }
 
     // print final electron density
     if (pSPARC->PrintElecDensFlag == 1) {
@@ -266,60 +327,109 @@ void Calculate_EGS_elecDensEnergy(SPARC_OBJ *pSPARC) {
     t1 = MPI_Wtime();   
 #endif
 
-    // find atoms that have nonlocal influence the process domain (of psi-domain)
-    GetInfluencingAtoms_nloc(pSPARC, &pSPARC->Atom_Influence_nloc, pSPARC->DMVertices_dmcomm, 
-    						 pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);
-    
-#ifdef DEBUG
-    t2 = MPI_Wtime();
-    if (rank == 0) printf("\nFinding nonlocal influencing atoms in psi-domain took %.3f ms\n",(t2-t1)*1000);
-    t1 = MPI_Wtime();
-#endif
-    
-    // calculate nonlocal projectors in psi-domain
-    if (pSPARC->isGammaPoint)
-        CalculateNonlocalProjectors(pSPARC, &pSPARC->nlocProj, pSPARC->Atom_Influence_nloc, 
-    	                            pSPARC->DMVertices_dmcomm, pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);
-    else
-        CalculateNonlocalProjectors_kpt(pSPARC, &pSPARC->nlocProj, pSPARC->Atom_Influence_nloc, 
-    	                                pSPARC->DMVertices_dmcomm, pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);	                            
-    
-#ifdef DEBUG
-    t2 = MPI_Wtime();
-    if (rank == 0) printf("\nCalculating nonlocal projectors in psi-domain took %.3f ms\n",(t2-t1)*1000);
-    t1 = MPI_Wtime();   
-#endif
-    
-    // find atoms that have nonlocal influence the process domain (of kptcomm_topo)
-    GetInfluencingAtoms_nloc(pSPARC, &pSPARC->Atom_Influence_nloc_kptcomm, pSPARC->DMVertices_kptcomm, 
-    						 pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);
-    
-#ifdef DEBUG
-    t2 = MPI_Wtime();
-    if (rank == 0) printf("\nFinding nonlocal influencing atoms in kptcomm_topo took %.3f ms\n",(t2-t1)*1000);
-    t1 = MPI_Wtime();
-#endif
-    
-    // calculate nonlocal projectors in kptcomm_topo
-    if (pSPARC->isGammaPoint)
-        CalculateNonlocalProjectors(pSPARC, &pSPARC->nlocProj_kptcomm, pSPARC->Atom_Influence_nloc_kptcomm, 
-								    pSPARC->DMVertices_kptcomm, 
-								    pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);
-    else
-        CalculateNonlocalProjectors_kpt(pSPARC, &pSPARC->nlocProj_kptcomm, pSPARC->Atom_Influence_nloc_kptcomm, 
-								        pSPARC->DMVertices_kptcomm, 
-								        pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);								    
-    
-#ifdef DEBUG
-    t2 = MPI_Wtime();
-    if (rank == 0) printf("\nCalculating nonlocal projectors in kptcomm_topo took %.3f ms\n",(t2-t1)*1000);   
-#endif
-    
+    if (pSPARC->SQFlag == 1) {
+        SQ_OBJ *pSQ = pSPARC->pSQ;
+        GetInfluencingAtoms_nloc(pSPARC, &pSPARC->Atom_Influence_nloc_kptcomm, 
+                        pSQ->DMVertices_PR, pSQ->dmcomm_SQ);
+        
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nFinding nonlocal influencing atoms in dmcomm_SQ took %.3f ms\n",(t2-t1)*1000);
+        t1 = MPI_Wtime();
+    #endif
+
+        CalculateNonlocalProjectors(pSPARC, &pSPARC->nlocProj_kptcomm, 
+                        pSPARC->Atom_Influence_nloc_kptcomm, pSQ->DMVertices_PR, pSQ->dmcomm_SQ);
+
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nCalculating nonlocal projectors in dmcomm_SQ took %.3f ms\n",(t2-t1)*1000);
+        t1 = MPI_Wtime();
+    #endif
+
+        GetNonlocalProjectorsForNode(pSPARC, pSPARC->nlocProj_kptcomm, &pSPARC->nlocProj_SQ, 
+                        pSPARC->Atom_Influence_nloc_kptcomm, &pSPARC->Atom_Influence_nloc_SQ, pSQ->dmcomm_SQ);
+        
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nGetting nonlocal projectors for each node in dmcomm_SQ took %.3f ms\n",(t2-t1)*1000);
+        t1 = MPI_Wtime();
+    #endif
+        
+        // TODO: Add correction term 
+        if(pSPARC->SQ_correction == 1) {
+            OverlapCorrection_SQ(pSPARC);
+            OverlapCorrection_forces_SQ(pSPARC);
+        }
+    } else {
+        // find atoms that have nonlocal influence the process domain (of psi-domain)
+        GetInfluencingAtoms_nloc(pSPARC, &pSPARC->Atom_Influence_nloc, pSPARC->DMVertices_dmcomm, 
+                                pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);
+        
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nFinding nonlocal influencing atoms in psi-domain took %.3f ms\n",(t2-t1)*1000);
+        t1 = MPI_Wtime();
+    #endif
+        
+        // calculate nonlocal projectors in psi-domain
+        if (pSPARC->isGammaPoint)
+            CalculateNonlocalProjectors(pSPARC, &pSPARC->nlocProj, pSPARC->Atom_Influence_nloc, 
+                                        pSPARC->DMVertices_dmcomm, pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);
+        else
+            CalculateNonlocalProjectors_kpt(pSPARC, &pSPARC->nlocProj, pSPARC->Atom_Influence_nloc, 
+                                            pSPARC->DMVertices_dmcomm, pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);	                            
+        
+        if (pSPARC->SOC_Flag) {
+            CalculateNonlocalProjectors_SOC(pSPARC, pSPARC->nlocProj, pSPARC->Atom_Influence_nloc, 
+                                            pSPARC->DMVertices_dmcomm, pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);
+            CreateChiSOMatrix(pSPARC, pSPARC->nlocProj, pSPARC->Atom_Influence_nloc, 
+                            pSPARC->bandcomm_index < 0 ? MPI_COMM_NULL : pSPARC->dmcomm);
+        }
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nCalculating nonlocal projectors in psi-domain took %.3f ms\n",(t2-t1)*1000);
+        t1 = MPI_Wtime();   
+    #endif
+        
+        // find atoms that have nonlocal influence the process domain (of kptcomm_topo)
+        GetInfluencingAtoms_nloc(pSPARC, &pSPARC->Atom_Influence_nloc_kptcomm, pSPARC->DMVertices_kptcomm, 
+                                pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);
+        
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nFinding nonlocal influencing atoms in kptcomm_topo took %.3f ms\n",(t2-t1)*1000);
+        t1 = MPI_Wtime();
+    #endif
+        
+        // calculate nonlocal projectors in kptcomm_topo
+        if (pSPARC->isGammaPoint)
+            CalculateNonlocalProjectors(pSPARC, &pSPARC->nlocProj_kptcomm, pSPARC->Atom_Influence_nloc_kptcomm, 
+                                        pSPARC->DMVertices_kptcomm, 
+                                        pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);
+        else
+            CalculateNonlocalProjectors_kpt(pSPARC, &pSPARC->nlocProj_kptcomm, pSPARC->Atom_Influence_nloc_kptcomm, 
+                                            pSPARC->DMVertices_kptcomm, 
+                                            pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);								    
+        
+        if (pSPARC->SOC_Flag) {
+            CalculateNonlocalProjectors_SOC(pSPARC, pSPARC->nlocProj_kptcomm, pSPARC->Atom_Influence_nloc_kptcomm, 
+                                            pSPARC->DMVertices_kptcomm, 
+                                            pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);
+            CreateChiSOMatrix(pSPARC, pSPARC->nlocProj_kptcomm, pSPARC->Atom_Influence_nloc_kptcomm, 
+                            pSPARC->kptcomm_index < 0 ? MPI_COMM_NULL : pSPARC->kptcomm_topo);
+        }
+    #ifdef DEBUG
+        t2 = MPI_Wtime();
+        if (rank == 0) printf("\nCalculating nonlocal projectors in kptcomm_topo took %.3f ms\n",(t2-t1)*1000);   
+    #endif
+        
+        // initialize orbitals psi
+        Init_orbital(pSPARC);
+    }
+
     // initialize electron density rho (initial guess)
     Init_electronDensity(pSPARC);
-    
-    // initialize orbitals psi
-    Init_orbital(pSPARC);
 
     // solve KS-DFT equations using Chebyshev filtered subspace iteration
     scf(pSPARC);
@@ -409,13 +519,18 @@ void scf(SPARC_OBJ *pSPARC)
             veff_mean /= ((double) (pSPARC->Nd * pSPARC->Nspin));
         }
     }
+    pSPARC->veff_mean = veff_mean;
 
     // initialize mixing_hist_xk (and mixing_hist_xkm1)
     Update_mixing_hist_xk(pSPARC, veff_mean);
     
-    // transfer Veff_loc from "phi-domain" to "psi-domain"
-    for (i = 0; i < pSPARC->Nspin; i++)
-        Transfer_Veff_loc(pSPARC, pSPARC->Veff_loc_dmcomm_phi + i*DMnd, pSPARC->Veff_loc_dmcomm + i*pSPARC->Nd_d_dmcomm);
+    if (pSPARC->SQFlag == 1) {
+        TransferVeff_phi2sq(pSPARC, pSPARC->Veff_loc_dmcomm_phi, pSPARC->pSQ->Veff_loc_SQ);
+    } else {
+        // transfer Veff_loc from "phi-domain" to "psi-domain"
+        for (i = 0; i < pSPARC->Nspin; i++)
+            Transfer_Veff_loc(pSPARC, pSPARC->Veff_loc_dmcomm_phi + i*DMnd, pSPARC->Veff_loc_dmcomm + i*pSPARC->Nd_d_dmcomm);
+    }
     
 	#ifdef DEBUG
     t2 = MPI_Wtime();
@@ -424,10 +539,46 @@ void scf(SPARC_OBJ *pSPARC)
     }
 	#endif
 
-    double error, dEtot, dEband, temp;
+    if (pSPARC->usefock <= 1) {
+        scf_loop(pSPARC);
+        if (pSPARC->usefock == 1) {
+            // usefock >=2 scf with exact exchange
+            pSPARC->usefock ++;
+            Exact_Exchange_loop(pSPARC);
+        }
+    } else {
+        // usefock >=2 scf with exact exchange
+        pSPARC->usefock ++;
+        Exact_Exchange_loop(pSPARC);
+    }
+}
+
+/**
+ * @brief   KS-DFT self-consistent field (SCF) calculations.
+ */
+void scf_loop(SPARC_OBJ *pSPARC) {
+    int rank, nproc;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+    
+    int DMnd = pSPARC->Nd_d;
+    int NspinDMnd = pSPARC->Nspin * DMnd;
+    int sindx_rho = (pSPARC->Nspin == 2) ? DMnd : 0;
+    int i, k, SCFcount, spn_i;
+    int Nk = pSPARC->Nkpts_kptcomm;
+    int Ns = pSPARC->Nstates;
+
+    double error, dEtot, dEband, temp, veff_mean;
+    double t1, t2, t_scf_s, t_scf_e, t_cum_scf;
+    
+    FILE *output_fp;
+
+    t_cum_scf = 0.0;
     error = pSPARC->TOL_SCF + 1.0;
     dEtot = dEband = pSPARC->TOL_SCF + 1.0;
-    
+    veff_mean = pSPARC->veff_mean;
+    if (pSPARC->usefock > 1) pSPARC->MINIT_SCF = 1;
+
     // 1st SCF will perform Chebyshev filtering several times, "count" keeps track 
     // of number of Chebyshev filtering calls, while SCFcount keeps track of # of
     // electron density updates
@@ -591,9 +742,12 @@ void scf(SPARC_OBJ *pSPARC)
           PCE_Veff_Set(&veff_info, &hd, pSPARC->Veff_loc_dmcomm);
         }
 
-        Calculate_elecDens(rank, pSPARC, SCFcount, error, 
-                           &hd, &cheb, &Eigvals, &ham_struct, &Psi1, &Psi2, &Psi3,
-                           pSPARC->kptcomm, pSPARC->dmcomm, pSPARC->blacscomm);
+        if (pSPARC->SQFlag == 1)
+            Calculate_elecDens_SQ(pSPARC, SCFcount);
+        else
+            Calculate_elecDens(rank, pSPARC, SCFcount, error, 
+                               &hd, &cheb, &Eigvals, &ham_struct, &Psi1, &Psi2, &Psi3,
+                               pSPARC->kptcomm, pSPARC->dmcomm, pSPARC->blacscomm);
 
         // Calculate net magnetization for spin polarized calculations
         if (pSPARC->spin_typ != 0)
@@ -612,23 +766,14 @@ void scf(SPARC_OBJ *pSPARC)
             //       struc energy). This is done once SCF is converged. Therefore
             //       the final reported energy is variational.
             if(pSPARC->spin_typ != 0) {
-                for (i = 0; i < NspinDMnd; i++){
-                    temp = pSPARC->electronDens[DMnd + i];
-                    pSPARC->electronDens[DMnd + i] = pSPARC->mixing_hist_xk[i];
-                    pSPARC->mixing_hist_xk[i] = temp;
+                double *rho_in = (double *)malloc(3 * DMnd * sizeof(double));
+                for (int i = 0; i < DMnd; i++) {
+                    rho_in[i] = pSPARC->mixing_hist_xk[i] + pSPARC->mixing_hist_xk[DMnd+i];
+                    rho_in[DMnd+i] = pSPARC->mixing_hist_xk[i];
+                    rho_in[2*DMnd+i] = pSPARC->mixing_hist_xk[DMnd+i];
                 }
-                for (i = 0; i < DMnd; i++)
-                    pSPARC->electronDens[i] = pSPARC->electronDens[DMnd + i] + pSPARC->electronDens[2*DMnd + i];
-
-                Calculate_Free_Energy(pSPARC, pSPARC->electronDens);
-
-                for (i = 0; i < DMnd; i++){
-                    temp = pSPARC->mixing_hist_xk[i];
-                    pSPARC->mixing_hist_xk[i] = pSPARC->electronDens[DMnd + i];
-                    pSPARC->electronDens[DMnd + i] = temp;
-                }
-                for (i = 0; i < DMnd; i++)
-                    pSPARC->electronDens[i] = pSPARC->electronDens[DMnd + i] + pSPARC->electronDens[2*DMnd + i];
+                Calculate_Free_Energy(pSPARC, rho_in);
+                free(rho_in);
             } else
                 Calculate_Free_Energy(pSPARC, pSPARC->mixing_hist_xk);
             
@@ -721,6 +866,7 @@ void scf(SPARC_OBJ *pSPARC)
             veff_mean /= ((double) (pSPARC->Nd * pSPARC->Nspin));
             // shift Veff by -mean(Veff) before mixing and calculating scf error
             VectorShift(pSPARC->Veff_loc_dmcomm_phi, NspinDMnd, -veff_mean, pSPARC->dmcomm_phi);
+            pSPARC->veff_mean = veff_mean;
         }
 
         // scf convergence flag
@@ -735,7 +881,7 @@ void scf(SPARC_OBJ *pSPARC)
         
         // check if Etot is NaN
         if (pSPARC->Etot != pSPARC->Etot) {
-            if (!rank) printf("Error: Etot is NaN\n");
+            if (!rank) printf("ERROR: Etot is NaN\n");
             exit(EXIT_FAILURE);
         }
 
@@ -791,11 +937,21 @@ void scf(SPARC_OBJ *pSPARC)
             Calculate_Veff_loc_dmcomm_phi(pSPARC);
         }
 
-        // transfer Veff_loc from "phi-domain" to "psi-domain"
-        t1 = MPI_Wtime();
-        for (i = 0; i < pSPARC->Nspin; i++)
-            Transfer_Veff_loc(pSPARC, pSPARC->Veff_loc_dmcomm_phi + i*DMnd, pSPARC->Veff_loc_dmcomm + i*pSPARC->Nd_d_dmcomm);
-        t2 = MPI_Wtime();
+        if (pSPARC->SQFlag == 1) {
+            for (i = 0; i < pSPARC->Nspin; i++)
+                TransferVeff_phi2sq(pSPARC, pSPARC->Veff_loc_dmcomm_phi, pSPARC->pSQ->Veff_loc_SQ);
+        } else {
+            // transfer Veff_loc from "phi-domain" to "psi-domain"
+            t1 = MPI_Wtime();
+            for (i = 0; i < pSPARC->Nspin; i++)
+                Transfer_Veff_loc(pSPARC, pSPARC->Veff_loc_dmcomm_phi + i*DMnd, pSPARC->Veff_loc_dmcomm + i*pSPARC->Nd_d_dmcomm);
+            t2 = MPI_Wtime();
+            #ifdef DEBUG
+            if(!rank) 
+                printf("rank = %d, Transfering Veff from phi-domain to psi-domain took %.3f ms\n", 
+                    rank, (t2 - t1) * 1e3);
+            #endif  
+        }
 
 		#ifdef DEBUG
         if(!rank) 
@@ -888,153 +1044,88 @@ void scf(SPARC_OBJ *pSPARC)
     int spin_maxocc = 0, k_maxocc = 0;
     double maxocc = -1.0;
 	// check occupation (if Nstates is large enough)
-    for (spn_i = 0; spn_i < pSPARC->Nspin_spincomm; spn_i++){
-        for (k = 0; k < Nk; k++) {
-            // int ind = round(pSPARC->Nstates * 0.90) - 1;
-            // ind = max(ind,0);
-            // double g_ind = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind];
-            // if (fabs((3.0-pSPARC->Nspin) * g_ind) > 1e-6) {
-            //     if(!rank) {
-            //         // find at which state occ(Nocc) <= 1e-6
-            //         int Nocc; char isSmall = 'N';
-            //         for (Nocc = ind+1; Nocc < pSPARC->Nstates; Nocc++) {
-            //             double occ_Nocc = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + Nocc];
-            //             if (occ_Nocc <= 1e-6) { 
-            //                 isSmall = 'Y'; break; 
-            //             }
-            //         }
-            //         int Ns_suggest;
-            //         if (isSmall == 'Y') {
-            //             Ns_suggest = round((Nocc+1.5)/0.90)+5; // add 5 to be safe
-            //         } else {
-            //             // increase Ns by 15% or use the default Ns, whichever is larger
-            //             Ns_suggest = max((int)((pSPARC->Nelectron/2)*1.2)+5, round(pSPARC->Nstates*1.15));
-            //         }
-
-            //         double k1_red, k2_red, k3_red;
-            //         if (pSPARC->BC != 1) {
-            //             k1_red = pSPARC->k1_loc[k]*pSPARC->range_x/(2.0*M_PI);
-            //             k2_red = pSPARC->k2_loc[k]*pSPARC->range_y/(2.0*M_PI);
-            //             k3_red = pSPARC->k3_loc[k]*pSPARC->range_z/(2.0*M_PI);
-            //         } else {
-            //             k1_red = k2_red = k3_red = 0.0;
-            //         }
-            //         printf("\nWARNING: Electronic occupation suggests NSTATES >= %d may improve performance.\n"
-            //                "  k = [%.3f, %.3f, %.3f]  occ(%d) = %.15f\n",
-            //                Ns_suggest,
-            //                k1_red, k2_red, k3_red,
-            //                ind+1, (3.0-pSPARC->Nspin) * g_ind);
-            //         printf("%s\n", );
-            //         // write to .out file
-            //         output_fp = fopen(pSPARC->OutFilename,"a");
-            //         if (output_fp == NULL) {
-            //             printf("\nCannot open file \"%s\"\n",pSPARC->OutFilename);
-            //             exit(EXIT_FAILURE);
-            //         }
-            //         fprintf(output_fp,
-            //                "\nWARNING: Electronic occupation suggests NSTATES >= %d may improve performance.\n"
-            //                "  k = [%.3f, %.3f, %.3f]  occ(%d) = %.15f\n",
-            //                Ns_suggest,
-            //                k1_red, k2_red, k3_red,
-            //                ind+1, (3.0-pSPARC->Nspin) * g_ind);
-            //         fclose(output_fp);
-            //     }
-            // }
-            int ind = pSPARC->Nstates-1;
-            ind = max(ind,0);
-            double g_ind = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind];
-            // if (fabs((3.0-pSPARC->Nspin) * g_ind) > 1e-5) {
-            //     if(!rank) {
-            //         double k1_red, k2_red, k3_red;
-            //         if (pSPARC->BC != 1) {
-            //             k1_red = pSPARC->k1_loc[k]*pSPARC->range_x/(2.0*M_PI);
-            //             k2_red = pSPARC->k2_loc[k]*pSPARC->range_y/(2.0*M_PI);
-            //             k3_red = pSPARC->k3_loc[k]*pSPARC->range_z/(2.0*M_PI);
-            //         } else {
-            //             k1_red = k2_red = k3_red = 0.0;
-            //         }
-            //         printf("\nWARNING: The last electronic occupation is greater than 1e-5.\n"
-            //                "  k = [%.3f, %.3f, %.3f]  occ(%d) = %.15f\n",
-            //                k1_red, k2_red, k3_red,
-            //                ind+1, (3.0-pSPARC->Nspin) * g_ind);
-            //         printf("%s\n", );
-            //         // write to .out file
-            //         output_fp = fopen(pSPARC->OutFilename,"a");
-            //         if (output_fp == NULL) {
-            //             printf("\nCannot open file \"%s\"\n",pSPARC->OutFilename);
-            //             exit(EXIT_FAILURE);
-            //         }
-            //         fprintf(output_fp,
-            //                "\nWARNING: The last electronic occupation is greater than 1e-5.\n"
-            //                "  k = [%.3f, %.3f, %.3f]  occ(%d) = %.15f\n",
-            //                k1_red, k2_red, k3_red,
-            //                ind+1, (3.0-pSPARC->Nspin) * g_ind);
-            //         fclose(output_fp);
-            //     }
-            // }
-            if (g_ind > maxocc) {
-                maxocc = g_ind;
-                spin_maxocc = spn_i;
-                k_maxocc = k;
+    if (pSPARC->SQFlag == 1) {
+        SQ_OBJ *pSQ = pSPARC->pSQ;
+        if (pSQ->dmcomm_SQ != MPI_COMM_NULL) {
+            // Find occupation corresponding to maximum eigenvalue
+            double maxeig, temp, occ_maxeig;
+            maxeig = pSQ->maxeig[0];
+            for (k = 1; k < pSQ->Nd_d_SQ; k++) {
+                if (pSQ->maxeig[k] > maxeig)
+                    maxeig = pSQ->maxeig[k];
             }
+            occ_maxeig = 2.0 * smearing_function(pSPARC->Beta, maxeig, pSPARC->Efermi, pSPARC->elec_T_type);
 
-    		#ifdef DEBUG
-            if(!rank) {
-                int nocc_print = min(200,pSPARC->Nstates - pSPARC->Nelectron/2 + 10);
-                nocc_print = min(nocc_print, pSPARC->Nstates);
-                printf("The last %d occupations of kpoints #%d are (Nelectron = %d):\n", nocc_print, k+1, pSPARC->Nelectron);
-                for (i = 0; i < nocc_print; i++) {
-                    printf("lambda[%4d] = %18.14f, occ[%4d] = %18.14f\n", 
-                            Ns - nocc_print + i + 1, 
-                            pSPARC->lambda_sorted[spn_i*Ns*Nk + k*Ns + Ns - nocc_print + i],
-                            Ns - nocc_print + i + 1, 
-                            (3.0-pSPARC->Nspin) * pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + Ns - nocc_print + i]);
+            #ifdef DEBUG
+            if (!rank) printf("Max eigenvalue and corresponding occupation number: %.15f, %.15f\n",maxeig,occ_maxeig);
+            #endif
+
+            if (occ_maxeig > pSPARC->SQ_tol_occ) {
+                if (!rank)  printf("WARNING: Occupation number corresponding to maximum "
+                            "eigenvalue exceeded the tolerance of: %E\n", pSPARC->SQ_tol_occ);
+            }
+        }
+    } else {
+        for (spn_i = 0; spn_i < pSPARC->Nspin_spincomm; spn_i++){
+            for (k = 0; k < Nk; k++) {
+                
+                int ind = pSPARC->Nstates-1;
+                ind = max(ind,0);
+                double g_ind = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind];
+                
+                if (g_ind > maxocc) {
+                    maxocc = g_ind;
+                    spin_maxocc = spn_i;
+                    k_maxocc = k;
                 }
-            }
-    		#endif
-        }
-    }    
 
-    // print occ(0.9*NSTATES)] and occ(NSTATES) to .out file (only for the k point that gives max occ)
-    spn_i = spin_maxocc;
-    k = k_maxocc;
-    if(!rank) {
-        double k1_red, k2_red, k3_red;
-        if (pSPARC->BC != 1) {
-            k1_red = pSPARC->k1_loc[k]*pSPARC->range_x/(2.0*M_PI);
-            k2_red = pSPARC->k2_loc[k]*pSPARC->range_y/(2.0*M_PI);
-            k3_red = pSPARC->k3_loc[k]*pSPARC->range_z/(2.0*M_PI);
-        } else {
-            k1_red = k2_red = k3_red = 0.0;
+                #ifdef DEBUG
+                if(!rank) {
+                    int nocc_print = min(200,pSPARC->Nstates - pSPARC->Nelectron/2 + 10);
+                    nocc_print = min(nocc_print, pSPARC->Nstates);
+                    printf("The last %d occupations of kpoints #%d are (Nelectron = %d):\n", nocc_print, k+1, pSPARC->Nelectron);
+                    for (i = 0; i < nocc_print; i++) {
+                        printf("lambda[%4d] = %18.14f, occ[%4d] = %18.14f\n", 
+                                Ns - nocc_print + i + 1, 
+                                pSPARC->lambda_sorted[spn_i*Ns*Nk + k*Ns + Ns - nocc_print + i],
+                                Ns - nocc_print + i + 1, 
+                                (3.0-pSPARC->Nspin)/pSPARC->Nspinor * pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + Ns - nocc_print + i]);
+                    }
+                }
+                #endif
+            }
+        }    
+
+        // print occ(0.9*NSTATES)] and occ(NSTATES) in DEBUG mode (only for the k point that gives max occ)
+        #ifdef DEBUG
+        spn_i = spin_maxocc;
+        k = k_maxocc;
+        if(!rank) {
+            double k1_red, k2_red, k3_red;
+            if (pSPARC->BC != 1) {
+                k1_red = pSPARC->k1_loc[k]*pSPARC->range_x/(2.0*M_PI);
+                k2_red = pSPARC->k2_loc[k]*pSPARC->range_y/(2.0*M_PI);
+                k3_red = pSPARC->k3_loc[k]*pSPARC->range_z/(2.0*M_PI);
+            } else {
+                k1_red = k2_red = k3_red = 0.0;
+            }
+            int ind_90percent = round(pSPARC->Nstates * 0.90) - 1;
+            int ind_100percent = pSPARC->Nstates - 1;
+            double g_ind_90percent = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind_90percent];
+            double g_ind_100percent = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind_100percent];
+            // write to .out file
+            if (pSPARC->BC != 1) printf("\nk = [%.3f, %.3f, %.3f]\n", k1_red, k2_red, k3_red);
+            printf("Occupation of state %d (90%%) = %.15f.\n"
+                "Occupation of state %d (100%%) = %.15f.\n",
+                ind_90percent+1, (3.0-pSPARC->Nspin)/pSPARC->Nspinor * g_ind_90percent,
+                ind_100percent+1, (3.0-pSPARC->Nspin)/pSPARC->Nspinor * g_ind_100percent);
         }
-        int ind_90percent = round(pSPARC->Nstates * 0.90) - 1;
-        int ind_100percent = pSPARC->Nstates - 1;
-        double g_ind_90percent = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind_90percent];
-        double g_ind_100percent = pSPARC->occ_sorted[spn_i*Ns*Nk + k*Ns + ind_100percent];
-        // printf("\nk = [%.3f, %.3f, %.3f]\n"
-        //        "Occupation of state %d = %.15f.\n"
-        //        "Occupation of state %d = %.15f.\n",
-        //        k1_red, k2_red, k3_red,
-        //        ind_90percent+1, (3.0-pSPARC->Nspin) * g_ind_90percent,
-        //        ind_100percent+1, (3.0-pSPARC->Nspin) * g_ind_100percent);
-        // write to .out file
-        output_fp = fopen(pSPARC->OutFilename,"a");
-        if (output_fp == NULL) {
-            printf("\nCannot open file \"%s\"\n",pSPARC->OutFilename);
-            exit(EXIT_FAILURE);
-        }
-        fprintf(output_fp,
-               "\nk = [%.3f, %.3f, %.3f]\n"
-               "Occupation of state %d = %.15f.\n"
-               "Occupation of state %d = %.15f.\n",
-               k1_red, k2_red, k3_red,
-               ind_90percent+1, (3.0-pSPARC->Nspin) * g_ind_90percent,
-               ind_100percent+1, (3.0-pSPARC->Nspin) * g_ind_100percent);
-        fclose(output_fp);
+        #endif
     }
 
     // check if scf is converged
-    if (error > pSPARC->TOL_SCF) {
+    double TOL = (pSPARC->usefock == 1) ? pSPARC->TOL_SCF_INIT : pSPARC->TOL_SCF;
+    if (error > TOL) {
     	if(!rank) {
             printf("WARNING: SCF#%d did not converge to desired accuracy!\n",
             		pSPARC->MDFlag ? pSPARC->MDCount + pSPARC->restartCount + (pSPARC->RestartFlag == 0) : pSPARC->RelaxCount + pSPARC->restartCount + (pSPARC->RestartFlag == 0));
@@ -1049,9 +1140,7 @@ void scf(SPARC_OBJ *pSPARC)
             fclose(output_fp);
         }
     }
-    
 }
-
 
 
 /**
@@ -1107,7 +1196,8 @@ void Evaluate_scf_error(SPARC_OBJ *pSPARC, double *scf_error, int *scf_conv) {
 
     // output
     *scf_error = error;
-    *scf_conv  = (int) (error < pSPARC->TOL_SCF);
+    *scf_conv  = (pSPARC->usefock == 1) 
+                ? ((int) (error < pSPARC->TOL_SCF_INIT)) : ((int) (error < pSPARC->TOL_SCF));
 }
 
 
@@ -1154,7 +1244,8 @@ void Evaluate_QE_scf_error(SPARC_OBJ *pSPARC, double *scf_error, int *scf_conv)
     MPI_Bcast(&error, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);   
     // output
     *scf_error = error;
-    *scf_conv  = (int) (error < pSPARC->TOL_SCF);
+    *scf_conv  = (pSPARC->usefock == 1) 
+                ? ((int) (error < pSPARC->TOL_SCF_INIT)) : ((int) (error < pSPARC->TOL_SCF));
 }
 
 
@@ -1673,7 +1764,8 @@ void printElecDens(SPARC_OBJ *pSPARC) {
         
         // free D2D targets
         Free_D2D_Target(&d2d_sender, &d2d_recvr, pSPARC->dmcomm_phi, recv_comm);
-        
+        if (rank_dmcomm_phi == 0) 
+            MPI_Comm_free(&recv_comm);
     } else {
         rho_at = pSPARC->electronDens_at;
         rho    = pSPARC->electronDens;
@@ -1761,3 +1853,4 @@ void printElecDens(SPARC_OBJ *pSPARC) {
         }
     }
 }
+

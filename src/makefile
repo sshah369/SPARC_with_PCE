@@ -9,16 +9,19 @@ USE_SCALAPACK = 0
 # Set USE_DP_SUBEIG = 1 to use SPARC rather than ScaLAPACK routines for matrix data distribution
 # (USE_DP_SUBEIG = 1 is required if both USE_MKL = 0 and USE_SCALAPACK = 0)
 # Set USE_DP_SUBEIG = 0 to use ScaLAPACK rather than SPARC routines
-USE_DP_SUBEIG = 1
+USE_DP_SUBEIG = 0
+# Set USE_FFTW = 1 to use FFTW for fast Fourier transform in vdWDF. Don't open it together with USE_MKL
+USE_FFTW      = 0
 # Set DEBUG_MODE = 1 to run with debug mode and print debug output
 DEBUG_MODE    = 1
 
-USE_GPU    := 1
+USE_GPU    := 0
 USE_ELPA := 1
+DEBUG_MODE    = 0
 
 # Enable SIMD vectorization for complex stencil routines
 # CAUTION: for some compilers this results in wrong results! Use for intel/19.0.3 or later versions
-ENABLE_SIMD_COMPLEX = 0
+ENABLE_SIMD_COMPLEX = 1
 
 # Specify the path MKLROOT if it's not already set to compile with MKL, e.g,
 # MKLROOT = /opt/intel/compilers_and_libraries_2017.4.196/linux/mkl
@@ -38,6 +41,7 @@ ENABLE_SIMD_COMPLEX = 0
 LIBPCE_DIR=../Hamiltonian/
 CA3DMM_DIR=$(LIBPCE_DIR)/CA3DMM
 
+#ELPA_ROOT=/usr/lib
 ELPA_DIR = $(ELPA_ROOT)
 #This may need to be changed depending on the installed elpa
 #ELPA_LIB = elpa
@@ -66,11 +70,13 @@ endif
 
 		
 
+CPPFLAGS += -Ixc/exx/include -Ixc/vdW/d3/include -Ixc/vdW/vdWDF/include -Ixc/mgga/include -IorderN/sq/include
+LDLIBS   += -lrt
 
 ifeq ($(USE_MKL), 1)
 CPPFLAGS += -m64 -I${MKLROOT}/include -DUSE_MKL
 LDFLAGS   = -L${MKLROOT}/lib/intel64
-LDLIBS   += -Wl,-rpath=${MKLROOT}/lib/intel64,--no-as-needed -lmkl_scalapack_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lmkl_blacs_intelmpi_lp64 -lpthread -lm -ldl
+LDLIBS   += -Wl,-rpath=${MKLROOT}/lib/intel64,--no-as-needed -lmkl_scalapack_lp64 -lmkl_cdft_core -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lmkl_blacs_intelmpi_lp64 -lpthread -lm -ldl
 else ifeq ($(USE_SCALAPACK), 1)
 CPPFLAGS += -DUSE_SCALAPACK
 LDLIBS   += -lscalapack
@@ -95,6 +101,12 @@ LDLIBS += -lopenblas -lm
 #LDLIBS += -llapacke -llapack -lblas -lm
 endif
 
+# if FFTW is used, link fftw
+ifeq ($(USE_FFTW), 1)
+CPPFLAGS += -DUSE_FFTW
+LDLIBS += -lfftw3_mpi -lfftw3 # fftw needs to be loaded before compile
+endif
+
 # To use domain parallelization + LAPACK for solving sobspace eigen problem
 ifeq ($(USE_DP_SUBEIG), 1)
 CPPFLAGS += -DUSE_DP_SUBEIG
@@ -102,7 +114,7 @@ endif
 
 # to compile with DEBUG mode
 ifeq ($(DEBUG_MODE), 1)
-CPPFLAGS += -Wall -g -DDEBUG
+CPPFLAGS += -Wall -g -DDEBUG -Werror-implicit-function-declaration
 endif
 
 # to enable SIMD for complex stencil routines
@@ -118,7 +130,22 @@ OBJSC = main.o initialization.o readfiles.o atomdata.o parallelization.o relax.o
         occupation.o lapVecRoutines.o gradVecRoutines.o gradVecRoutinesKpt.o nlocVecRoutines.o   \
         hamiltonianVecRoutines.o lapVecOrth.o lapVecOrthKpt.o lapVecNonOrth.o lapVecNonOrthKpt.o \
         linearSolver.o mixing.o exchangeCorrelation.o eigenSolver.o eigenSolverKpt.o energy.o    \
-        forces.o stress.o pressure.o finalization.o hamstruct.o pce_interface.o
+        forces.o stress.o pressure.o finalization.o spinOrbitCoupling.o                          \
+        xc/vdW/d3/d3correction.o xc/vdW/d3/d3findR0ab.o xc/vdW/d3/d3copyC6.o                     \
+        xc/vdW/d3/d3initialization.o xc/vdW/d3/d3finalization.o xc/vdW/d3/d3forceStress.o        \
+        xc/vdW/vdWDF/vdWDFinitialization.o xc/vdW/vdWDF/vdWDFfinalization.o                      \
+        xc/vdW/vdWDF/vdWDFexchangeLinearCorre.o xc/vdW/vdWDF/vdWDFnonlinearCorre.o               \
+        xc/vdW/vdWDF/vdWDFstress.o xc/vdW/vdWDF/vdWDFgenerateKernelSpline.o                      \
+        xc/mgga/energyDensity.o xc/mgga/MGGAscan.o xc/mgga/MGGASscan.o                           \
+        xc/mgga/MGGAhamiltonianTerm.o xc/mgga/MGGAinitialization.o xc/mgga/MGGAstress.o          \
+        xc/mgga/MGGAfinalization.o xc/mgga/MGGAexchangeCorrelation.o                             \
+        xc/exx/exactExchange.o xc/exx/exactExchangeKpt.o                                         \
+        xc/exx/exactExchangeInitialization.o xc/exx/exactExchangeFinalization.o                  \
+        xc/exx/exactExchangeStress.o xc/exx/exactExchangePressure.o orderN/sq/sq.o               \
+        orderN/sq/sqInitialization.o orderN/sq/sqFinalization.o orderN/sq/sqEnergy.o             \
+        orderN/sq/sqDensity.o orderN/sq/sqNlocVecRoutines.o orderN/sq/sqParallelization.o        \
+        orderN/sq/sqProperties.o orderN/sq/sqtool.o                                              \
+				hamstruct.o pce_interface.o
 
 LIBBASE = ../lib/sparc
 TESTBASE = ../.ci
@@ -141,5 +168,5 @@ sparc: $(OBJSC) $(LIBPCE_DIR)/lib/libpce.a
 .PHONY: clean
 clean:
 	rm -f  $(OBJSC) $(LIBBASE)
-test1: ../tests/test.py
+test: ../tests/test.py
 	cd ../tests; python test.py 

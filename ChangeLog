@@ -4,6 +4,329 @@
 -changes
 
 --------------
+Jul 15, 2022
+Name: Boqin Zhang
+Changes: (xc/vdW/d3, xc/vdW/vdWDF, xc/mgga, stress.c, pressure.c)
+1. Split DFT-D3, vdWDF and metaGGA files into multiple files
+
+
+--------------
+Jul 14, 2022
+Name: Xin Jing
+Changes: (exx/, sq/, initialization.c, tests/)
+1. Split exact exchange and sq files into multiple files
+2. Change spin_typ in tests/ folder
+
+
+--------------
+Jul 14, 2022
+Name: Qimen Xu
+Changes: (doc/, psdpots/, mgga/, vdW/, exx/, sq/, makefile, energyDensity.c)
+1. Make `LaTex/` within `doc/` a hidden directory, and merge SQ manual into the main manual.
+2. Rename `psdpots/` to `psps/`.
+3. Create a `xc/` directory, and move `mgga/`, `vdW/`, and `exx/` into `xc/`.
+4. Create a `orderN/` directory, and move `sq/` into `orderN/`.
+5. Create a `include/` directory within `mgga/`, `vdW/`, `exx/`, `xc/` and `sq/`.
+6. Move energyDensity.c and the corresponding header file into `xc/mgga/`.
+7. Move warnings regarding Nstates and occupation from .out file to log file.
+8. Modify the ending info in the .out file.
+
+
+--------------
+July 01, 2022
+Name: Boqin Zhang
+Changes: (mgga/mgga.h, eigenSolver.c, eigenSolverKpt.c, energy.c, pressure.c)
+1. Add missed headfiles and function declarations
+2. Modify Lanczos for SCAN
+
+
+--------------
+June 24, 2022
+Name: Boqin Zhang
+Changes: (mgga/, initialization.c, eigenSolver.c, eigenSolverKpt.c, exchangeCorrelation.c, hamiltonianVecRoutine.c, energy.c)
+1. Add spin-polarized SCAN functional
+
+
+--------------
+June 21, 2022
+Name: Xin Jing
+Changes: (exx/, makefile, initialization.c)
+1. Fix issues when compiling using different modules for exact exchange
+
+
+--------------
+June 17, 2022
+Name: Xin Jing
+Changes: (exactExchangeProperties.h)
+1. Fix a inconsistency in header file and function
+
+--------------
+June 09, 2022
+Name: Xin Jing
+Changes: (exx/)
+1. Enable band parallelization in exact exchange
+2. Fix a bug in parallelization when Nd_blacscomm are not the same in all blacscomm, 
+   leading to different dims in blacs_ctxt. 
+3. update test suits 
+
+--------------
+May 17, 2022
+Name: Xin Jing
+Changes: (sq.c, initialization.c, sqProperties.c, energyDensity.c)
+1. Release SQ method
+2. Fix a few warnings in compilation 
+3. Move a few functions related to energy density into a separate file
+4. Update documentations about SQ
+
+--------------
+May 10 2022
+Name: Xin Jing
+Changes: (initialization.c, spinOrbitCoupling.c, doc/)
+1. Release spin-orbit coupling with all features except spin
+2. Add tests in tests/ folder
+3. Update docs
+
+--------------
+May 09, 2022
+Name: Boqin Zhang
+Changes: (mgga/, initialization.c, electronicGroundState.c, exchangeCorrelation.c, parallelization.c, hamiltonianVecRoutine.c, energy.c, stress.c, pressure.c)
+1. Add metaGGA functions and SCAN functional
+2. Move DFT-D3 stress function calling from electronicGrountState.c to stress.c and pressure.c
+
+--------------
+May 06, 2022
+Name: Xin Jing
+Changes: (exx/, hamiltonian.c, gradVecRoutinesKpt.c, initialization.c, etc)
+1. Release the hybrid calculation of PBE0 and HSE and the corresponding tests
+2. Change the gradVecRountinesKpt more general
+3. Update the documentations and README.md
+
+--------------
+Apr 28, 2022
+Name: Xin Jing
+Changes: (stress.c)
+1. Fix bug in stress when multiple k-points in each kptcomm 
+
+--------------
+Mar 18, 2022
+Name: Boqin Zhang
+Changes: (initialization.c, md.c, md.h)
+1. Modify NPT-NH and NPT-NP to output LATVEC_SCALE in .out and .restart
+2. Add error message for using vdW-DF in Dirichlet boundary condition
+
+
+--------------
+Feb 26, 2022
+Name: Boqin Zhang
+Changes: (initialization.c, isddft.h, md.c, pressure.c, stress.c, finalization.c, vdW/vdWDF, tests/test.py)
+1. Add van der Waals density functional (vdWDF1 and vdWDF2), and their test systems
+2. modify bugs in NPT-NH and NPT-NP thermostat
+
+
+--------------
+Jan 04, 2022
+Name: Boqin Zhang
+Changes: (initialization.c, isddft.h, readfiles.c, md.h, md.c)
+1. Add NPT-NH and NPT-NP thermostat
+
+
+--------------
+Dec 23, 2021
+Name: Boqin Zhang
+Changes: (initialization.c, isddft.h, readfiles.c, electronicGroundStates.c, atomdata.c, finalization.c, vdW/d3)
+1. Add Grimme's DFT-D3 correction
+
+
+--------------
+Dec 21, 2021
+Name: Xin Jing
+Changes: (initialization.c, eigensolver.c, isddft.h, scalapck.h)
+1. Add GPU hooks
+
+
+--------------
+Nov 19, 2021
+Name: Qimen Xu
+Changes: (electrostatics.c)
+1. Fix bug in NLCC for spin-polarized relaxation/MD simulations.
+
+
+--------------
+Oct 28, 2021
+Name: Shashikant Kumar
+Changes: (tests)
+1. Added features in the test.py to launch the jobs in batches
+2. Updated the reference output files
+
+
+--------------
+Oct 11, 2021
+Name: Xin Jing
+Changes: (parallelization.c)
+1. Fix bug in is_phi_eq_kpt_topo when there are MPI_COMM_NULL and dmcomm_phi is actually equal to kptcomm_topo
+
+
+--------------
+Oct 07, 2021
+Name: Xin Jing
+Changes: (readfiles.c)
+1. increase robustness in checking scientific notation of pseudopotential files
+
+--------------
+Oct 07, 2021
+Name: Qimen Xu
+Changes: (parallelization.c, eigenSolver.c, finalization.c, isddft.h)
+1. Fix bug in Lanczos: in the case user specifies `NP_DOMAIN_PHI_PARAL`, check if dmcomm_phi is the same as kptcomm_topo before using dmcomm_phi for Lanczos.
+
+
+--------------
+Oct 03, 2021
+Name: Qimen Xu
+Changes: (main.c, initialization.c, md.c, relax.c)
+1. Explicitly flush the standard output right before MPI_Finalization to prevent Finalize hang.
+2. In DEBUG mode, make sure all standard output are printed by rank 0.
+
+
+--------------
+Sep 22, 2021
+Name: Xin Jing
+Changes: (initialization.c,)
+1. Change numbering of output files
+2. Add robustness of reading .ion files
+3. Fix bug in print electron density
+4. Add KENIG in .aimd file
+
+
+--------------
+Sep 22, 2021
+Name: Xin Jing
+Changes: (initialization.c)
+1. Add CELL section in output file
+
+
+--------------
+Sep 19, 2021
+Name: Shashikant Kumar
+Changes: (tests)
+1. Updated reference output files
+2. Added a new NLCC system
+3. Added a feature to just run the check 
+4. Added MIXING_PRECOND_MAG tests
+
+
+--------------
+Sep 17, 2021
+Name: Xin Jing
+Changes: (doc/, initialization.c, electronicGroundState.c)
+1. Modify documentation.
+2. Capitalize Error and Warnings
+3. Fix bug in mixing
+4. Fix bug in exchange correlation with NLCC
+
+
+--------------
+Sep 09, 2021
+Name: Qimen Xu
+Changes: (doc/)
+1. Modify documentation.
+
+
+--------------
+Jul 31, 2021
+Name: Shashikant Kumar
+Changes: (tests)
+1. Replaced "CELL" with "LATVEC_SCALE" in input files
+2. Fe_spin with non-zero magnetization
+3. Bulk system with three orientations
+4. Bandgap tests for molecules
+5. Check ionic stress and velocities for MD
+6. added option "clean_temp" to clear the files
+
+
+--------------
+Jul 23, 2021
+Name: Qimen Xu
+Changes: (electronicGroundState.c)
+1. Switch back to calculating the pressure directly when CALC_PRES is turned on alone (i.e., CALC_STRESS is off).
+
+
+--------------
+Jul 14, 2021
+Name: Qimen Xu
+Changes: (eigenSolver*.c, parallelization.c, initialization.c)
+1. Modify memory estimate (include extra memory used by MKL).
+2. Reduce memory usage due to MKL for domain-only parallelization (NP_BAND_PARAL: 1): skip data transfer through p?gemr2d and explicitly call BLAS ?gemm instead of ScaLAPACK p?gemm for projection.
+3. Move memory allocation of eigmin/eigmax arrays to initialization stage.
+
+
+--------------
+Jul 13, 2021
+Name: Shashikant Kumar
+Changes: (tests)
+1. Fixed bug in 'tests' folder for the systems with 'quick_run' tag
+
+
+--------------
+Jul 09, 2021
+Name: Shashikant Kumar
+Changes: (README.md, doc/Manual, tests/test.py)
+1. Updated README.md and manual doc file to make it consistent with the new tests folder
+2. Changed the test.py (tests folder) to include "quick_run" tag which launches very fast tests
+
+
+--------------
+Jul 09, 2021
+Name: Qimen Xu
+Changes: (eigenSolver*.c, orbitalElecDensInit.c, forces.c, stress.c)
+1. Reduce memory required for simulations with k-points.
+2. Calculate the stress tensor instead when CALC_PRES is turned on.
+3. Bug fix: MPI_Allreduce instead of MPI_Reduce for calculating nloc stress over kpoints.
+4. Use divide-and-conquer eigensolvers from LAPACK for the subspace eigenproblem. Increase default `EIG_SERIAL_MAXNS` to 10000.
+
+--------------
+May 11, 2021
+Name: Shashikant Kumar
+Changes: (tests)
+1. Updated the reference files
+2. Enabled valgrind tests for all systems, tests of SCF iterations
+
+
+--------------
+Apr 23, 2021
+Name: Qimen Xu
+Changes: (mixing.c)
+1. Add options to perform a different mixing parameter and different preconditioner for the magnetization density/potential from the total density/potential in spin-polarized calcuations. The new options are:
+1) `MIXING_PARAMETER_MAG`
+2) `MIXING_PARAMETER_SIMPLE_MAG`
+3) `MIXING_PRECOND_MAG`
+4) `PRECOND_KERKER_KTF_MAG`
+5) `PRECOND_KERKER_THRESH_MAG`
+Details about these options can be found in doc/Manual.pdf.
+
+
+--------------
+Apr 20, 2021
+Name: Qimen Xu
+Changes: (electronicGroundState.c)
+1. Fix bug in mixing history vectors for spin-polarized tests which seriously affects the SCF convergence.
+2. Modify the mixing function so that it's consistent with M-SPARC.
+
+
+--------------
+Apr 19, 2021
+Name: Qimen Xu
+Changes: (readfiles.c, initialization.c, isddft.h)
+1. Add input option LATVEC_SCALE, which is an alternative option for CELL, except it takes into account the length of the lattice vectors given by LATVEC.
+
+
+--------------
+Apr 14, 2021
+Name: Qimen Xu
+Changes: (electrostatics.c)
+1. Fix bug in NLCC: reinitialize core charge density correctly when atoms are moved.
+
+
+--------------
 Apr 06, 2021
 Name: Shashikant Kumar
 Changes: (.travis.yml, makefile, makefile-ibm, tests)

@@ -1,0 +1,4 @@
+[submodule "Hamiltonian"]
+	path = Hamiltonian
+	url = git@github.com:sshah369/Hamiltonian.git
+	branch = chem_sim_init

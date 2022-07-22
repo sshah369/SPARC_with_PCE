@@ -20,7 +20,7 @@ tols = {"F_tol": 1e-5, # Ha/Bohr
 	"wall_tol": 10, # in percent
 	"CELL_tol": 0.01, # Bohr
 	"scfpos_tol": 0.01, # Bohr
-	"scfno_tol": 1,
+	"scfno_tol": 2,
 	"spin_tol": 0.001, # a.u.
 	"memused_tol": 10}# percent}
 
@@ -35,7 +35,7 @@ SYSTEMS = { "systemname": ['BaTiO3_valgrind'],
 
 ################################################################################################################
 SYSTEMS["systemname"].append('CuSi7')
-SYSTEMS["Tags"].append(['bulk', 'lda', 'denmix', 'kerker', 'gamma', 'orth', 'smear_gauss'])
+SYSTEMS["Tags"].append(['bulk', 'lda', 'denmix', 'kerker', 'gamma', 'orth', 'smear_gauss','ECUT'])
 SYSTEMS["Tols"].append([tols["E_tol"], 3e-5, tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ################################################################################################################
 SYSTEMS["systemname"].append('BaTiO3')
@@ -44,6 +44,10 @@ SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_t
 ################################################################################################################
 SYSTEMS["systemname"].append('Fe_spin')
 SYSTEMS["Tags"].append(['bulk', 'gga', 'denmix', 'kerker', 'kpt', 'spin','orth','smear_fd'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Fe_spin_nlcc')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'denmix', 'kerker', 'kpt', 'spin','orth','smear_fd','nlcc'])
 SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ################################################################################################################
 SYSTEMS["systemname"].append('H2O_sheet')
@@ -91,7 +95,7 @@ SYSTEMS["Tags"].append(['bulk', 'gga', 'potmix', 'nonorth','gamma','smear_fd'])
 SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ################################################################################################################
 SYSTEMS["systemname"].append('SiH4')
-SYSTEMS["Tags"].append(['molecule', 'lda', 'denmix', 'kerker', 'orth','smear_gauss'])
+SYSTEMS["Tags"].append(['molecule', 'lda', 'denmix', 'kerker', 'orth','smear_gauss','bandgap'])
 SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ################################################################################################################
 # SYSTEMS["systemname"].append('SiH4_atom_geopt')
@@ -103,7 +107,7 @@ SYSTEMS["Tags"].append(['bulk', 'lda', 'denmix', 'kerker', 'nonorth','smear_fd']
 SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ################################################################################################################
 SYSTEMS["systemname"].append('MgO')
-SYSTEMS["Tags"].append(['bulk','gga','potmix','nonorth','smear_gauss','nlcc'])
+SYSTEMS["Tags"].append(['bulk','gga','potmix','nonorth','smear_gauss','nlcc','orient'])
 SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ################################################################################################################
 SYSTEMS["systemname"].append('MoS2')
@@ -142,11 +146,120 @@ SYSTEMS["systemname"].append('P_triclinic')
 SYSTEMS["Tags"].append(['bulk', 'gga', 'potmix', 'nonorth','gamma','smear_fd'])
 SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
 ##################################################################################################################
-						# < Uncomment 3 lines below and fill in the details for the new systems>
-# SYSTEMS["systemname"].append('??type the system name??')
-# SYSTEMS["Tags"].append([??type the tags for the system as strings separated by comma??])
-# SYSTEMS["Tols"].append([??type the E_tol, F_tol and stress_tol separated by comma??]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+SYSTEMS["systemname"].append('BaTiO3_quick')
+SYSTEMS["Tags"].append(['bulk', 'lda', 'denmix', 'orth','gamma','smear_gauss'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('H2O_sheet_quick')
+SYSTEMS["Tags"].append(['surface', 'gga', 'potmix', 'orth','gamma','smear_fd'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################						
+SYSTEMS["systemname"].append('H2O_wire_quick')
+SYSTEMS["Tags"].append(['wire', 'lda', 'denmix', 'orth','gamma','smear_fd'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################### 
+SYSTEMS["systemname"].append('SiH4_quick')
+SYSTEMS["Tags"].append(['molecule', 'lda', 'denmix', 'orth','gamma','smear_gauss'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('SnO_bulk_d3')
+SYSTEMS["Tags"].append(['bulk', 'gga','d3'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Au_wire_d3')
+SYSTEMS["Tags"].append(['wire', 'gga','d3'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('MoS2_surface_d3')
+SYSTEMS["Tags"].append(['surface', 'gga','d3','nonorth'])
+SYSTEMS["Tols"].append([tols["E_tol"], 1e-4, tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Si8_atom_geopt_d3')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'denmix', 'kerker', 'relax_atom_lbfgs','gamma','smear_gauss','d3'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Si8_cell_geopt_d3')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'potmix', 'relax_cell','gamma','smear_fd','d3'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Al18Si18_NPTNH')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'nonorth', 'md_npt'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Al16Si16_NPTNH_restart')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'md_npt'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Al18Si18_NPTNH_lat23')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'nonorth', 'md_npt'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Al18Si18_NPTNP')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'nonorth', 'md_npt'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Al16Si16_NPTNP_restart')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'md_npt'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('BaTiO3_vdWDF1')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'gamma','vdWDF'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('BaTiO3_vdWDF2')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'gamma','vdWDF'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('Si4_kpt_vdWDF1')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'gamma','vdWDF'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('Si4_kpt_vdWDF2')
+SYSTEMS["Tags"].append(['bulk', 'gga', 'orth', 'gamma','vdWDF'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('Si2_kpt_PBE0')
+SYSTEMS["Tags"].append(['bulk', 'PBE0','kpt' 'nonorth','smear_fd'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('C_HSE_aux')
+SYSTEMS["Tags"].append(['bulk', 'HSE','gamma' 'nonorth','smear_fd','potmix'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('O2_spin_HSE')
+SYSTEMS["Tags"].append(['molecule', 'spin', 'HSE', 'denmix', 'kerker', 'orth','smear_gauss'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+################################################################################################################
+SYSTEMS["systemname"].append('BaTiO3_scan')
+SYSTEMS["Tags"].append(['bulk', 'orth', 'gamma','scan'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('Si4_kpt_scan')
+SYSTEMS["Tags"].append(['bulk', 'nonorth', 'kpt','scan'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('Fe2_spin_scan_gamma')
+SYSTEMS["Tags"].append(['bulk', 'spin', 'nonorth', 'gamma','scan'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('Fe2_spin_scan_kpt')
+SYSTEMS["Tags"].append(['bulk', 'spin', 'orth', 'kpt','scan'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('PtAu_SOC')
+SYSTEMS["Tags"].append(['bulk', 'SOC','kpt' 'nonorth','smear_gauss'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
+SYSTEMS["systemname"].append('BN_SQ')
+SYSTEMS["Tags"].append(['bulk', 'SQ', 'orth','lda','smear_fd'])
+SYSTEMS["Tols"].append([tols["E_tol"], tols["F_tol"], tols["stress_tol"]]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+##################################################################################################################
 
+##################################################################################################################
+# < Uncomment 3 lines below and fill in the details for the new systems>
+# SYSTEMS["systemname"].append('??type the system name??')
+# SYSTEMS["Tols"].append([??type the E_tol, F_tol and stress_tol separated by comma??]) # E_tol(Ha/atom), F_tol(Ha/Bohr), stress_tol(%)
+# SYSTEMS["Tags"].append([??type the tags for the system as strings separated by comma??])
 
 
 ####################################################################################################################
@@ -264,20 +377,28 @@ def launchsystems(systems,memcheck,procs_sys,ismempbs,ifVHQ, isorient, isserial)
 					os.system("cp ./high_accuracy/*.inpt ./temp_run")
 					os.system("cp ./high_accuracy/*.ion ./temp_run")
 					os.system("cp *.psp8 temp_run")
+					if syst == "Al16Si16_NPTNH_restart" or syst == "Al16Si16_NPTNP_restart":
+						os.system("cp ./low_accuracy/*.restart ./temp_run")
 				if ifVHQ == False:
 					os.system("cp ./low_accuracy/*.inpt ./temp_run")
 					os.system("cp ./low_accuracy/*.ion ./temp_run")
 					os.system("cp *.psp8 temp_run")
+					if syst == "Al16Si16_NPTNH_restart" or syst == "Al16Si16_NPTNP_restart":
+						os.system("cp ./low_accuracy/*.restart ./temp_run")
 			else:
 				os.mkdir("temp_run")
 				if ifVHQ == True:
 					os.system("cp ./high_accuracy/*.inpt ./temp_run")
 					os.system("cp ./high_accuracy/*.ion ./temp_run")
 					os.system("cp *.psp8 temp_run")
+					if syst == "Al16Si16_NPTNH_restart" or syst == "Al16Si16_NPTNP_restart":
+						os.system("cp ./low_accuracy/*.restart ./temp_run")
 				if ifVHQ == False:
 					os.system("cp ./low_accuracy/*.inpt ./temp_run")
 					os.system("cp ./low_accuracy/*.ion ./temp_run")
 					os.system("cp *.psp8 temp_run")
+					if syst == "Al16Si16_NPTNH_restart" or syst == "Al16Si16_NPTNP_restart":
+						os.system("cp ./low_accuracy/*.restart ./temp_run")
 		else:
 			if os.path.isdir("temp_run1"):
 				files = glob.glob("temp_run1/*")
@@ -361,7 +482,12 @@ def launchsystems(systems,memcheck,procs_sys,ismempbs,ifVHQ, isorient, isserial)
 			for lines in samplePBS_content_orj:
 				samplePBS_content.append(lines)
 			if memcheck[count] == True:
-				samplePBS_content.append("module load valgrind")
+				samplePBS_content.append("module purge")
+				samplePBS_content.append("module load gcc/8.3.0")
+				samplePBS_content.append("module load mvapich2/2.3.2")
+				samplePBS_content.append("module load mkl/19.0.5")
+				samplePBS_content.append("module load valgrind/3.16.1")
+				# samplePBS_content.append("module load valgrind")
 				#samplePBS_content.append("export MV2_USE_RDMA_CM=1")
 			for lines in samplePBS_content:
 				if re.findall(r'nodes',lines) == ['nodes']:
@@ -498,7 +624,12 @@ def launchsystems(systems,memcheck,procs_sys,ismempbs,ifVHQ, isorient, isserial)
 
 			index1=0
 			if True in memcheck_grp:
-				samplePBS_content.append("module load valgrind")
+				samplePBS_content.append("module purge")
+				samplePBS_content.append("module load gcc/8.3.0")
+				samplePBS_content.append("module load mvapich2/2.3.2")
+				samplePBS_content.append("module load mkl/19.0.5")
+				samplePBS_content.append("module load valgrind/3.16.1")
+				# samplePBS_content.append("module load valgrind")
 				#samplePBS_content.append("export MV2_USE_RDMA_CM=1")
 			for lines in samplePBS_content:
 				if re.findall(r'nodes',lines) == ['nodes']:
@@ -600,264 +731,6 @@ def isfinishedJobsID(JobID):
 	else:
 		return True
 
-def getInfoAbinit(syst,singlept,Type,isspin,ifVHQ):
-	#""" Reads the Energy, Forces, Stress etc from ABINIT reference output """
-	os.chdir(syst)
-	if (singlept == True):
-		with open(syst+".refabinitout",'r') as f_out:
-			f_out_content = [ line.strip() for line in f_out ]
-			Ener = []
-			force = []
-			stress = []
-			magnetization = 0
-			for lines in f_out_content:
-				if re.findall(r'natom', lines) == ['natom']:
-					temp = re.findall(r'\d+',lines)
-					natoms = int(float(temp[0]))
-					break
-			for lines in f_out_content:
-				if re.findall(r'Etotal', lines) == ['Etotal']:
-					temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',lines)
-					Ener.append(float(temp[0]) /natoms)
-					break
-			for lines in f_out_content:
-				if re.findall(r'cartesian forces \(hartree/bohr\)', lines) == ['cartesian forces (hartree/bohr)']:
-					index_force =  f_out_content.index(lines)
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+',f_out_content[index_force+i+1])
-						ftemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						force.append(ftemp)
-					break
-			for lines in f_out_content:
-				if re.findall(r'Cartesian components of stress tensor \(GPa\)', lines) == ['Cartesian components of stress tensor (GPa)']:
-					index_stress =  f_out_content.index(lines)
-					for i in range(3):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_stress+i+1])
-						stemp = [float(temp[0]),float(temp[1])]
-						stress.append(stemp)
-					stress = [[stress[0][0], stress[2][1],  stress[1][1]], [stress[2][1], stress[1][0],  stress[0][1]], [stress[1][1], stress[0][1],  stress[2][0]]]
-					break
-
-			for lines in f_out_content:				
-				if isspin ==  True:
-					if re.findall(r'up - dn',lines) == ['up - dn']:
-						temp_m = re.findall(r'\d+\.\d+',lines)
-						magnetization = float(temp_m[0])
-						break
-
-		Info = {"Type": "singlepnt",
-		"energy": Ener,
-		"force": force,
-		"stress": stress,
-		"magnetization": magnetization}
-		os.chdir("./..")
-		return(Info)
-
-	elif ((singlept == False) and (Type == "relax_atom")):
-		with open(syst+".refabinitout",'r') as f_out:
-			f_out_content = [ line.strip() for line in f_out ]
-
-		Ener = []
-		force = []
-		scfpos = []
-		magnetization = 0
-		for lines in f_out_content:
-				if re.findall(r'natom', lines) == ['natom']:
-					temp = re.findall(r'\d+',lines)
-					natoms = int(float(temp[0]))
-					break
-		for lines in f_out_content:
-				if re.findall(r'Total energy \(etotal\)', lines) == ['Total energy (etotal)']:
-					temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',lines)
-					Ener.append(float(temp[0]) / natoms)
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian forces \(fcart\)', lines) == ['Cartesian forces (fcart)']:
-					index_force =  f_out_content.index(lines)
-					ftemp1=[]
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_force+i+1])
-						ftemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						ftemp1.append(ftemp)
-					force.append(ftemp1)
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian coordinates \(xcart\)', lines) == ['Cartesian coordinates (xcart)']:
-					index_scfpos =  f_out_content.index(lines)
-					spostemp1=[]
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_scfpos+i+1])
-						spostemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						spostemp1.append(ftemp)
-					scfpos.append(spostemp1)
-
-		for lines in f_out_content:
-			if isspin ==  True:
-				if re.findall(r'up - dn',lines) == ['up - dn']:
-					temp_m = re.findall(r'\d+\.\d+',lines)
-					magnetization.append(float(temp_m[0]))
-
-		Info = {"Type": "relax_atom",
-		"energy": Ener,
-		"force": force,
-		"scfpos": scfpos,
-		"magnetization": magnetization}
-		os.chdir("./..")
-		return(Info)
-
-	elif ((singlept == False) and (Type == "relax_total")):
-		with open(syst+".refabinitout",'r') as f_out:
-			f_out_content = [ line.strip() for line in f_out ]
-
-		Ener = []
-		force = []
-		scfpos = []
-		stress = []
-		cell = []
-		magnetization = 0
-
-		for lines in f_out_content:
-				if re.findall(r'natom', lines) == ['natom']:
-					temp = re.findall(r'\d+',lines)
-					natoms = int(float(temp[0]))
-					break
-		for lines in f_out_content:
-				if re.findall(r'Total energy \(etotal\)', lines) == ['Total energy (etotal)']:
-					temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',lines)
-					Ener.append(float(temp[0]) / natoms)
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian forces \(fcart\)', lines) == ['Cartesian forces (fcart)']:
-					index_force =  f_out_content.index(lines)
-					ftemp1=[]
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_force+i+1])
-						ftemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						ftemp1.append(ftemp)
-					force.append(ftemp1)
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian coordinates \(xcart\)', lines) == ['Cartesian coordinates (xcart)']:
-					index_scfpos =  f_out_content.index(lines)
-					spostemp1=[]
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_scfpos+i+1])
-						spostemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						spostemp1.append(ftemp)
-					scfpos.append(spostemp1)
-
-		for lines in f_out_content:
-				if re.findall(r'Lengths \[Bohr\]', lines) == ['Lengths [Bohr]']:
-					index_cell =  f_out_content.index(lines)
-					temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_cell+1])
-					cell.append([float(temp[0]), float(temp[1]), float(temp[2])])
-
-		for lines in f_out_content:
-				if re.findall(r'Stress tensor in cartesian coordinates', lines) == ['Stress tensor in cartesian coordinates']:
-					index_stress =  f_out_content.index(lines)
-					stresstemp1=[]
-					for i in range(3):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_stress+i+1])
-						strtemp = [float(temp[0])*29421.02648438959,float(temp[1])*29421.02648438959,float(temp[2])*29421.02648438959]
-						stresstemp1.append(strtemp)
-					stress.append(stresstemp1)
-
-
-		for lines in f_out_content:
-			if isspin ==  True:
-				if re.findall(r'up - dn',lines) == ['up - dn']:
-					temp_m = re.findall(r'\d+\.\d+',lines)
-					magnetization.append(float(temp_m[0]))
-
-		Info = {"Type": "relax_atom",
-		"energy": Ener,
-		"force": force,
-		"scfpos": scfpos,
-		"stress": stress,
-		"cell": cell,
-		"magnetization": magnetization}
-		os.chdir("./..")
-		return(Info)
-
-	elif ((singlept == False) and (Type == "MD")):
-		with open(syst+".refabinitout",'r') as f_out:
-			f_out_content = [ line.strip() for line in f_out ]
-
-		Ener = []
-		force = []
-		scfpos = []
-		stress = []
-		KEN = []
-		magnetization = 0
-		cell=[]
-		for lines in f_out_content:
-				if re.findall(r'natom', lines) == ['natom']:
-					temp = re.findall(r'\d+',lines)
-					natoms = int(float(temp[0]))
-					break
-
-		for lines in f_out_content:
-				if re.findall(r'Kinetic energy of ions \(ekin\)', lines) == ['Kinetic energy of ions (ekin)']:
-					temp = re.findall(r'\d+',lines)
-					KEN.append(int(float(temp[0]) / natoms))
-					
-
-		for lines in f_out_content:
-				if re.findall(r'Total energy \(etotal\)', lines) == ['Total energy (etotal)']:
-					temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',lines)
-					Ener.append(float(temp[0]) / natoms)
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian forces \(fcart\)', lines) == ['Cartesian forces (fcart)']:
-					index_force =  f_out_content.index(lines)
-					ftemp1=[]
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_force+i+1])
-						ftemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						ftemp1.append(ftemp)
-					force.append(ftemp1)
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian coordinates \(xcart\)', lines) == ['Cartesian coordinates (xcart)']:
-					index_scfpos =  f_out_content.index(lines)
-					spostemp1=[]
-					for i in range(natoms):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_scfpos+i+1])
-						spostemp = [float(temp[0]),float(temp[1]),float(temp[2])]
-						spostemp1.append(ftemp)
-					scfpos.append(spostemp1)
-
-		for lines in f_out_content:
-				if re.findall(r'Lengths \[Bohr\]', lines) == ['Lengths [Bohr]']:
-					index_cell =  f_out_content.index(lines)
-					temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_cell+1])
-					cell.append([float(temp[0]), float(temp[1]), float(temp[2])])
-
-		for lines in f_out_content:
-				if re.findall(r'Cartesian components of stress tensor', lines) == ['Cartesian components of stress tensor']:
-					index_stress =  f_out_content.index(lines)
-					stresstemp1=[]
-					for i in range(3):
-						temp = re.findall(r'[+-]?\d+\.\d+[E][+-]?\d+',f_out_content[index_stress+i+1])
-						strtemp = [float(temp[0])*29421.02648438959,float(temp[1])*29421.02648438959]
-						stresstemp1.append(strtemp)
-					stress.append([[stresstemp1[0][0], stresstemp1[2][1],  stresstemp1[1][1]], [stresstemp1[2][1], stresstemp1[1][0],  stresstemp1[0][1]], [stresstemp1[1][1], stresstemp1[0][1],  stresstemp1[2][0]]])
-
-		for lines in f_out_content:
-			if isspin ==  True:
-				if re.findall(r'up - dn',lines) == ['up - dn']:
-					temp_m = re.findall(r'\d+\.\d+',lines)
-					magnetization.append(float(temp_m[0]))
-		
-		Info = {"Type": "relax_atom",
-		"energy": Ener,
-		"force": force,
-		"scfpos": scfpos,
-		"stress": stress,
-		"KEN": KEN,
-		"magnetization": magnetization}
-		os.chdir("./..")
-		return(Info)
 
 def ReadOutFile(filepath, isMD, geopt_typ, isSpin):
 	#""" Reads .out file from SPARC runs and reference """
@@ -876,6 +749,9 @@ def ReadOutFile(filepath, isMD, geopt_typ, isSpin):
 	magnetization = []
 	pressure = []
 	index=0
+	isbandgap = False
+	nstates=0
+
 
 	for lines in f_out_content:
 		if re.findall(r"PRINT_FORCES",lines) == ['PRINT_FORCES']:
@@ -885,6 +761,14 @@ def ReadOutFile(filepath, isMD, geopt_typ, isSpin):
 				isPrintF = True
 			elif val_temp == 0:
 				isPrintF = False
+		if re.findall(r"NSTATES",lines) == ['NSTATES']:
+			nstates_temp = re.findall(r'\d',lines)
+			nstates = int(nstates_temp[0])
+		if re.findall(r"PRINT_EIGEN",lines) == ['PRINT_EIGEN']:
+			prteigen_temp =  re.findall(r'\d',lines)
+			if int(prteigen_temp[0]) == 1:
+				isbandgap = True
+
 		if re.findall(r"PRINT_ATOMS",lines) == ['PRINT_ATOMS']:
 			val_temp = re.findall(r'\d',lines)
 			val_temp = int(val_temp[0])
@@ -938,6 +822,24 @@ def ReadOutFile(filepath, isMD, geopt_typ, isSpin):
 					temp_spin = re.findall(r'\b[+-]?\d+\.\d+E[+-]\d+\b',f_out_content[index-1])
 					magnetization=float(temp_spin[1])
 		index=index+1
+	if isMD == None and geopt_typ ==  None:
+		SCF_no = 0
+		for lines in f_out_content:
+			if re.findall("Total number of SCF",lines):
+				SCF_no = float(re.findall("\d+",lines)[0])
+	else:
+		MD_iter = len(E)
+		SCF_no=[]
+		for n_md in range(MD_iter):
+			SCF_no.append(0)
+		count1 = 0
+		for lines in f_out_content:
+			if re.findall("Total number of SCF",lines):
+				# SCF_no.append(float(re.findall("\d+",lines)[0]))
+				SCF_no[count1] = float(re.findall("\d+",lines)[0])
+				count1=count1+1
+
+
 	if geopt_typ ==  "cell_relax":
 		isPrintF = False
 		isPrintCell = True
@@ -952,20 +854,22 @@ def ReadOutFile(filepath, isMD, geopt_typ, isSpin):
 		isPrintCell = True
 		isPrintAtoms  = True
 		isPrintStress = True
-
 	assert (no_atoms>0 and E != [] and walltime != []),"Problem in out file for system "+filepath
 
 	Info = {"isPrintF": isPrintF,
 		"isPrintStress": isPrintStress,
 		"isPrintPres": isPrintPres,
 		"isPrintAtoms": isPrintAtoms,
+		"isbandgap": isbandgap,
 		"no_atoms": no_atoms,
+		"nstates": nstates,
 		"stressDim": stressDim,
 		"magnetization": magnetization,
 		"E": E,
 		"pressure": pressure,
 		"walltime": walltime,
-		"isPrintCell": isPrintCell}
+		"isPrintCell": isPrintCell,
+		"SCF_no": SCF_no}
 	return(Info)
 
 def ReadStaticFile(filepath, info_out):
@@ -1121,6 +1025,8 @@ def ReadAimdFile(filepath, info_out):
 	stress = []
 	scfpos = []
 	KEN = []
+	ionic_stress = []
+	velocity = []
 
 	index = 0
 	for lines in f_aimd_content:
@@ -1138,8 +1044,29 @@ def ReadAimdFile(filepath, info_out):
 						F_atom_temp[j] = float(F_atom_temp[j])
 					F_tempMD.append(F_atom_temp)
 				force.append(F_tempMD)
+		if True:
+			if lines == ':V:':
+				V_tempMD = []
+				for aa in range(info_out["no_atoms"]):
+					line_temp = f_aimd_content[index+aa+1]
+					V_atom_temp =  re.findall(r'\b[+-]?\d+\.\d+E[+-]\d+\b',line_temp)
+					for j in range(len(V_atom_temp)):
+						V_atom_temp[j] = float(V_atom_temp[j])
+					V_tempMD.append(V_atom_temp)
+				velocity.append(V_tempMD)
+
 		if info_out["isPrintStress"]:
 			if lines == ':STRESS:':
+				st_tempMD = []
+				for bb in range(3):
+					line_temp = f_aimd_content[index+bb+1]
+					st_atom_temp =  re.findall(r'\b[+-]?\d+\.\d+E[+-]\d+\b',line_temp)
+					for j in range(len(st_atom_temp)):
+						st_atom_temp[j] = float(st_atom_temp[j])
+					st_tempMD.append(st_atom_temp)
+				ionic_stress.append(st_tempMD)
+		if info_out["isPrintStress"]:
+			if lines == ':STRIO:':
 				st_tempMD = []
 				for bb in range(3):
 					line_temp = f_aimd_content[index+bb+1]
@@ -1170,9 +1097,9 @@ def ReadAimdFile(filepath, info_out):
 		truth1=True
 	else:
 		truth1=False
-	if info_out["isPrintStress"] and stress !=[]:
+	if info_out["isPrintStress"] and stress !=[] and ionic_stress != []:
 		truth2=True
-	elif info_out["isPrintStress"]==False and stress ==[]:
+	elif info_out["isPrintStress"]==False and stress ==[] and ionic_stress == []:
 		truth2=True
 	else:
 		truth2=False
@@ -1187,10 +1114,42 @@ def ReadAimdFile(filepath, info_out):
 	assert (truth1 and truth2 and truth3 and truth4),"Problem in aimd file for system "+filepath
 	### Error Handling ###
 	Info_aimd = {"stress": stress,
+				   "ionic_stress": ionic_stress,
+				   "velocity": velocity,
 				   "force": force,
 				   "scfpos": scfpos,
 				   "KEN": KEN}
 	return(Info_aimd)
+
+def ReadEigenFile_molecule(filepath, info_out):
+
+	if info_out["isbandgap"] == False:
+		bandgap = 0
+	else:
+		with open(filepath,'r') as f_eigen:
+			f_eigen_content = [ line.strip() for line in f_eigen ]
+		index = 0
+		for lines in f_eigen_content:
+			if re.findall(r'eigval',lines) == ['eigval']:
+				nstates = info_out["nstates"]
+				eigval =[]
+				occ =[]
+				n = []
+				for ltemp in range(nstates):
+					band_info_temp = re.findall(r'\b[+-]?\d+\.\d+E[+-]\d+\b',f_eigen_content[index+1+ltemp])
+					eigval.append(float(band_info_temp[0]))
+					band_info_temp = re.findall(r'\b[+-]?[0-9]+\.[0-9]+\b',f_eigen_content[index+1+ltemp])
+					occ.append(float(band_info_temp[0]))
+					band_info_temp = re.findall(r'\b\d\b',f_eigen_content[index+1+ltemp])
+					n.append(int(band_info_temp[0]))
+				for ltemp in range(nstates):
+					if occ[ltemp] < 0.01:
+						bandgap = eigval[ltemp] - eigval[ltemp-1]
+				break
+			index=index+1
+				
+	return(bandgap)
+
 
 def ReadmemoutputFile(isorientsys, ismempbs, ifref, ifVHQ):
 	memused =0
@@ -1221,11 +1180,11 @@ def ReadmemoutputFile(isorientsys, ismempbs, ifref, ifVHQ):
 		if ismempbs == True:
 			ismemused=True
 			if ifref == False:
-				with open("./../temp_run1/output.sparc",'r') as f_sparc1:
+				with open("./temp_run1/output.sparc",'r') as f_sparc1:
 					f_sparc_content1 = [ line.strip() for line in f_sparc1 ]
-				with open("./../temp_run2/output.sparc",'r') as f_sparc2:
+				with open("./temp_run2/output.sparc",'r') as f_sparc2:
 					f_sparc_content2 = [ line.strip() for line in f_sparc2 ]
-				with open("./../temp_run3/output.sparc",'r') as f_sparc3:
+				with open("./temp_run3/output.sparc",'r') as f_sparc3:
 					f_sparc_content3 = [ line.strip() for line in f_sparc3 ]
 			else:
 				if ifVHQ == True:
@@ -1260,6 +1219,8 @@ def ReadmemoutputFile(isorientsys, ismempbs, ifref, ifVHQ):
 					temp1=re.findall(r'\d+',lines)
 					memused.append(float(temp1[-2]))
 					break
+			if ifref == True:
+				memused=memused[0]
 	return ismemused,memused
 
 
@@ -1332,14 +1293,20 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 		#------------------------ Memory from output.sparc ----------------------------#
 		ismemused,memused = ReadmemoutputFile(isorientsys, ismempbs, ifref, ifVHQ)
 		
-		#------------------------ Memory from output.sparc ----------------------------#
+		
 		if ifref == False:
 			if isorientsys == False:
 				infout = ReadOutFile("./temp_run/"+syst+".out", None, None, isspin)
 				infstatic = ReadStaticFile("./temp_run/"+syst+".static", infout)
+				#------------------------ Bandgap ----------------------------#
+				bandgap = ReadEigenFile_molecule("./temp_run/"+syst+".eigen", infout)
+				#------------------------ Bandgap ----------------------------#
 			else:
 				infout1 = ReadOutFile("./temp_run1/"+syst+".out", None, None, isspin)
 				infstatic1 = ReadStaticFile("./temp_run1/"+syst+".static", infout1)
+				#------------------------ Bandgap ----------------------------#
+				bandgap = ReadEigenFile_molecule("./temp_run1/"+syst+".eigen", infout1)
+				#------------------------ Bandgap ----------------------------#
 				infout2 = ReadOutFile("./temp_run2/"+syst+".out", None, None, isspin)
 				infstatic2 = ReadStaticFile("./temp_run2/"+syst+".static", infout2)
 				infout3 = ReadOutFile("./temp_run3/"+syst+".out", None, None, isspin)
@@ -1349,20 +1316,33 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 				if ifVHQ == True:
 					infout = ReadOutFile("./high_accuracy/"+syst+".refout", None, None, isspin)
 					infstatic = ReadStaticFile("./high_accuracy/"+syst+".refstatic", infout)
+					#------------------------ Bandgap ----------------------------#
+					bandgap = ReadEigenFile_molecule("./high_accuracy/"+syst+".refeigen", infout)
+					#------------------------ Bandgap ----------------------------#
 				else:
 					infout = ReadOutFile("./low_accuracy/"+syst+".refout", None, None, isspin)
 					infstatic = ReadStaticFile("./low_accuracy/"+syst+".refstatic", infout)
+					#------------------------ Bandgap ----------------------------#
+					bandgap = ReadEigenFile_molecule("./low_accuracy/"+syst+".refeigen", infout)
+					#------------------------ Bandgap ----------------------------#
 			else:
 				if ifVHQ == True:
 					infout = ReadOutFile("./high_accuracy_orientation1/"+syst+".refout", None, None, isspin)
 					infstatic = ReadStaticFile("./high_accuracy_orientation1/"+syst+".refstatic", infout)
+					#------------------------ Bandgap ----------------------------#
+					bandgap = ReadEigenFile_molecule("./high_accuracy_orientation1/"+syst+".refeigen", infout)
+					#------------------------ Bandgap ----------------------------#
 				else:
 					infout = ReadOutFile("./low_accuracy_orientation1/"+syst+".refout", None, None, isspin)
 					infstatic = ReadStaticFile("./low_accuracy_orientation1/"+syst+".refstatic", infout)
+					#------------------------ Bandgap ----------------------------#
+					bandgap = ReadEigenFile_molecule("./low_accuracy_orientation1/"+syst+".refeigen", infout)
+					#------------------------ Bandgap ----------------------------#
 
 		if isorientsys == False or ifref == True:
 			E = infout["E"]
 			walltime = infout["walltime"]
+			SCF_no = infout["SCF_no"]
 			force = []
 			pressure = []
 			stress=[]
@@ -1374,8 +1354,10 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			if infout["isPrintPres"] == True:
 				pressure = infout["pressure"]
 			no_atoms = infout["no_atoms"]
+			isbandgap = infout["isbandgap"]
 		else:
 			E=[ infout1["E"], infout2["E"], infout3["E"]]
+			SCF_no = infout1["SCF_no"]
 			walltime = infout1["walltime"]#[infout1["walltime"],infout2["walltime"],infout3["walltime"]]
 			force = []
 			pressure = []
@@ -1388,11 +1370,14 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			if infout1["isPrintPres"] == True:
 				pressure = infout1["pressure"]#[infout1["pressure"],infout1["pressure"],infout1["pressure"]]
 			no_atoms = infout1["no_atoms"]
+			isbandgap = infout1["isbandgap"]
 
 		Info = {"Type": "singlept",
 			"isspin": isspin,
 			"ismemcheck": ismemch,
 			"ismemused": ismemused,
+			"isbandgap": isbandgap,
+			"bandgap": bandgap,
 			"energy": E,
 			"force": force,
 			"stress": stress,
@@ -1403,7 +1388,9 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			"pressure": pressure,
 			"no_atoms": no_atoms,
 			"isorient": isorientsys,
-			"tolerance": tolerance}
+			"tolerance": tolerance,
+			"SCF_no": SCF_no,
+			"bandgap": bandgap}
 
 		os.chdir("./..")
 		return(Info)
@@ -1447,6 +1434,7 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 					infgeopt = ReadGeoptFile("./low_accuracy_orientation1/"+syst+".refgeopt", infout)
 		if isorientsys == False or ifref == True:
 			E = infout["E"]
+			SCF_no = infout["SCF_no"]
 			walltime = infout["walltime"]
 			scfpos = infgeopt["scfpos"]
 			force = []
@@ -1457,6 +1445,7 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			no_atoms = infout["no_atoms"]
 		else:
 			E = [infout1["E"],infout2["E"],infout3["E"]]
+			SCF_no = infout1["SCF_no"]
 			walltime = infout1["walltime"]#[infout1["walltime"],infout2["walltime"],infout3["walltime"]]
 			scfpos = infgeopt1["scfpos"]#[infgeopt1["scfpos"],infgeopt2["scfpos"],infgeopt3["scfpos"]]
 			force = []
@@ -1480,7 +1469,8 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			"pressure": pressure,
 			"no_atoms": no_atoms,
 			"isorient": isorientsys,
-			"tolerance": tolerance}
+			"tolerance": tolerance,
+			"SCF_no": SCF_no}
 
 		os.chdir("./..")
 		return(Info)
@@ -1524,6 +1514,7 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 
 		if isorientsys == False or ifref == False:
 			E = infout["E"]
+			SCF_no = infout["SCF_no"]
 			walltime = infout["walltime"]
 			scfpos = infgeopt["scfpos"]
 			cell = infgeopt["cell"]
@@ -1537,6 +1528,7 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			no_atoms = infout["no_atoms"]
 		else:
 			E = [infout1["E"],infout2["E"],infout3["E"]]
+			SCF_no = infout1["SCF_no"]
 			walltime = infout1["walltime"]#[infout1["walltime"],infout2["walltime"],infout3["walltime"]]
 			scfpos = infgeopt1["scfpos"]#[infgeopt1["scfpos"],infgeopt2["scfpos"],infgeopt3["scfpos"]]
 			cell = infgeopt1["cell"]#[infgeopt1["cell"],infgeopt2["cell"],infgeopt3["cell"]]
@@ -1562,7 +1554,8 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			"pressure": pressure,
 			"no_atoms": no_atoms,
 			"isorient": isorientsys,
-			"tolerance": tolerance}
+			"tolerance": tolerance,
+			"SCF_no": SCF_no}
 
 
 
@@ -1609,6 +1602,7 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 					infgeopt = ReadGeoptFile("./low_accuracy_orientation1/"+syst+".refgeopt", infout)
 		if isorientsys == False or ifref == True:
 			E = infout["E"]
+			SCF_no = infout["SCF_no"]
 			walltime = infout["walltime"]
 			scfpos = infgeopt["scfpos"]
 			cell = infgeopt["cell"]
@@ -1623,6 +1617,7 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			no_atoms = infout["no_atoms"]
 		else:
 			E = [infout1["E"],infout2["E"],infout3["E"]]
+			SCF_no = infout1["SCF_no"]
 			walltime = infout1["walltime"]#[infout1["walltime"],infout2["walltime"],infout3["walltime"]]
 			scfpos = infgeopt1["scfpos"]#[infgeopt1["scfpos"],infgeopt2["scfpos"],infgeopt3["scfpos"]]
 			cell = infgeopt1["cell"]#[infgeopt1["cell"],infgeopt2["cell"],infgeopt3["cell"]]
@@ -1651,7 +1646,8 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			"no_atoms": no_atoms,
 			"scfpos": scfpos,
 			"isorient": isorientsys,
-			"tolerance": tolerance}
+			"tolerance": tolerance,
+			"SCF_no": SCF_no}
 
 
 		os.chdir("./..")
@@ -1695,15 +1691,20 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 					infaimd = ReadAimdFile("./low_accuracy_orientation1/"+syst+".refaimd", infout)
 		if isorientsys == False or ifref == True:
 			E = infout["E"]
+			SCF_no = infout["SCF_no"]
 			walltime = infout["walltime"]
 			KEN = infaimd["KEN"]
 			pressure=infout["pressure"]
+			velocity = infaimd["velocity"]
+			
 			scfpos = []
 			stress = []
 			force = []
+			ionic_stress = []
 			magnetization = infout["magnetization"]
 			if infout["isPrintStress"] == True:
 				stress = infaimd["stress"]
+				ionic_stress = infaimd["ionic_stress"]
 			if infout["isPrintF"] == True:
 				force = infaimd["force"]
 			if infout["isPrintAtoms"] ==  True:
@@ -1711,15 +1712,18 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			no_atoms = infout["no_atoms"]
 		else:
 			E = [infout1["E"],infout2["E"],infout3["E"]]
+			SCF_no = infout1["SCF_no"]
 			walltime = infout1["walltime"]#[infout1["walltime"],infout2["walltime"],infout3["walltime"]]
 			KEN = infaimd1["KEN"]#[infaimd1["KEN"],infaimd2["KEN"],infaimd3["KEN"]]
-			pressure=infout["pressure"]
+			pressure=infout1["pressure"]
+			velocity = infaimd1["velocity"]
 			scfpos = []
 			stress = []
 			force = []
 			magnetization = infout1["magnetization"]#[infout1["magnetization"],infout2["magnetization"],infout3["magnetization"]]
 			if infout1["isPrintStress"] == True:
 				stress = infaimd1["stress"]#[infaimd1["stress"],infaimd2["stress"],infaimd3["stress"]]
+				ionic_stress = infaimd1["ionic_stress"]
 			if infout1["isPrintF"] == True:
 				force = infaimd1["force"]#[infaimd1["force"],infaimd2["force"],infaimd3["force"]]
 			if infout1["isPrintAtoms"] ==  True:
@@ -1731,6 +1735,8 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			"ismemcheck": ismemch,
 			"force": force,
 			"stress": stress,
+			"ionic_stress": ionic_stress,
+			"velocity": velocity,
 			"ismemused": ismemused,
 			"energy": E,
 			"walltime": walltime,
@@ -1741,7 +1747,8 @@ def getInfo(syst,singlept,Type, ifref,memcheck, ismempbs, isspin, ifVHQ, isorien
 			"magnetization": magnetization,
 			"no_atoms": no_atoms,
 			"isorient": isorientsys,
-			"tolerance": tolerance}
+			"tolerance": tolerance,
+			"SCF_no": SCF_no}
 			
 
 		os.chdir("./..")
@@ -1770,6 +1777,8 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 	Ener_error = []
 	test_status=[]
 	texttoprint=[]
+	Error_message_global  = []
+	Warning_message_global = []
 	Wall_error = []
 	for i in range(len(systems)):
 		info_temp = data_info[i]
@@ -1790,7 +1799,12 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			text2=''
 			errspin = 0
 			text3=''
+			warning_message = ""
 			no_atoms = info_run["no_atoms"]
+			if info_run["isbandgap"] == True:
+				err_bandgap = abs(info_run["bandgap"] - info_ref["bandgap"])
+			else:
+				err_bandgap = 0
 			if info_run["isspin"] == True:
 				if info_run["isorient"] == False:
 					magnetization_ref = info_ref["magnetization"]
@@ -1852,6 +1866,16 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			F_ref = info_ref["force"]
 			F_run = info_run["force"]
 
+			SCF_no_ref = info_ref["SCF_no"]
+			SCF_no_run = info_run["SCF_no"]
+
+			Error_SCF_no = SCF_no_run - SCF_no_ref;
+			if Error_SCF_no < 0:
+				warning_message=warning_message+ " Number of SCF iterations are smaller (" +str(Error_SCF_no)+"/"+str(SCF_no_ref)+") than the reference"
+			elif Error_SCF_no > 0:
+				warning_message=warning_message+ " Number of SCF iterations are larger (" +str(Error_SCF_no)+"/"+str(SCF_no_ref)+") than the reference"
+				
+
 			if isabinit == True:
 				F_abinit = info_run["force"]
 			force_error=[]
@@ -1912,15 +1936,22 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 
 			#scfno_error = abs(info_run["scfno"][0]-info_ref["scfno"][0])
 			Wall_error.append(walltime_error)
+			if walltime_error < 0:
+				warning_message=warning_message+" Walltime is smaller than the reference"
+			if walltime_error > wall_tol:
+				warning_message=warning_message+" Walltime exceeded by "+ str(walltime_error)+"%"
 
 			text="System name: "+systems[i]+"\n"+"Single Point Calculation \nEnergy error (Ha/atom): "+ str(E_sys_err)+"\nForce error (Ha/Bohr): "+'{0:1.2e}'.format(force_error)+"\n"
 			#for j in range(no_atoms):
 				#text = text+'{0:1.2e}'.format(force_error[j][0])+" "+'{0:1.2e}'.format(force_error[j][1])+" "+'{0:1.2e}'.format(force_error[j][2])+"\n"
 			text = text+"Stress (%) error: "+ '{0:1.2e}'.format(stress_error)+"\n"
+			text = text+"Number of SCF iteration error: "+ str(Error_SCF_no)+"\n"
 			#for j in range(3):
 				#text = text+'{0:1.2e}'.format(stress_error[j][0])+" "+'{0:1.2e}'.format(stress_error[j][1])+" "+'{0:1.2e}'.format(stress_error[j][2])+"\n"
 			if isparallel == True and info_run["ismemcheck"] == False:
 				text = text+"walltime error (%): "+'{0:1.2e}'.format(walltime_error)+"\n"
+			if info_run["isbandgap"] == True:
+				text = text+"Bandgap error (Ha): "+'{0:1.2e}'.format(err_bandgap)+"\n"
 			#text = text+"Error in number of SCF iterations for convergence: "+str(scfno_error)+"\n"
 			if isabinit == True:
 				text = text+"Error from ABINIT reference: \n"+"Energy error (Ha/atom): "+ '{0:1.2e}'.format(E_abinit_err)+"\n"
@@ -1932,10 +1963,26 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 					#text = text+'{0:1.2e}'.format(stress_error_abinit[j][0])+" "+'{0:1.2e}'.format(stress_error_abinit[j][1])+" "+'{0:1.2e}'.format(stress_error_abinit[j][2])+"\n"
 			
 			text=text+text1+text2+text3
-			if (errspin <= spin_tol  and E_sys_err <= E_tol and force_error <= F_tol and stress_error <= stress_tol  and memlost == 0):
+			Failure_text=""
+			if (err_bandgap <= 0.001 and Error_SCF_no <=  scfno_tol and errspin <= spin_tol  and E_sys_err <= E_tol and force_error <= F_tol and stress_error <= stress_tol  and memlost == 0):
 				test_status.append("passed")
 				text="Test Result: Passed \n"+text
 			else:
+				Failure_text = Failure_text+"Test for this system "+" failed in: "
+				if (errspin > spin_tol):
+					Failure_text =  Failure_text + "Spin polarization, "
+				if (E_sys_err > E_tol):
+					Failure_text =  Failure_text + "Energy, "
+				if (force_error > F_tol):
+					Failure_text =  Failure_text + "Force, "
+				if (stress_error > stress_tol):
+					Failure_text =  Failure_text + "Stress, "
+				if (memlost > 0):
+					Failure_text =  Failure_text + "Memory leak, "
+				if (Error_SCF_no >  scfno_tol):
+					Failure_text =  Failure_text + "Number of SCF iterations, "
+				Error_message_global.append(Failure_text)
+
 				test_status.append("failed")
 				text="Test Result: Failed \n"+text
 				#print(len(texttoprint))
@@ -1945,6 +1992,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				text = text + "Warning: Memory used exceeded"
 
 			texttoprint.append(text)
+			Warning_message_global.append(warning_message)
 
 
 		elif info_run["Type"]=="relax_atom":
@@ -1953,6 +2001,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			err_memused = 0
 			text2=''
 			errspin = 0
+			warning_message = ""
 			text3=''
 			E_run = info_run["energy"]
 			no_atoms = info_run["no_atoms"]
@@ -2010,6 +2059,24 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				text = "System name: "+systems[i]+"\n"+"Warning: different relaxation iterations for the convergence!"
 			E_ref = info_ref["energy"]
 			E_run = info_run["energy"]
+
+			SCF_no_ref = info_ref["SCF_no"]
+			SCF_no_run = info_run["SCF_no"]
+			Error_SCF_no=0
+			if len(SCF_no_ref)!=len(SCF_no_run):
+				warning_message = "Number of electronic steps for atom position relaxation for system "+systems[i]+" is different from the reference"
+			else:
+				Error_SCF_no = []
+				for scfno in range(len(SCF_no_run)):
+					Error_SCF_no.append(SCF_no_run[scfno] - SCF_no_ref[scfno])
+				Error_SCF_no1=Error_SCF_no
+				Error_SCF_no = max(Error_SCF_no)
+				if Error_SCF_no < 0:
+					warning_message=warning_message+ " Number of SCF iterations are smaller (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				elif Error_SCF_no > 0:
+					warning_message=warning_message+ " Number of SCF iterations are larger (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				
+
 			if isabinit == True:
 				E_abinit =  info_abinit["energy"]
 				scfpos_abinit = info_abinit["scfpos"]
@@ -2054,20 +2121,39 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			if isparallel == False or info_run["ismemcheck"] == True:
 				walltime_error = 0
 			Wall_error.append(walltime_error)
+			if walltime_error < 0:
+				warning_message=warning_message+" Walltime is smaller than the reference"
+			if walltime_error > wall_tol:
+				warning_message=warning_message+" Walltime exceeded by "+ str(walltime_error)+"%"
 
 			text = "System name: "+systems[i]+"\n"+"Atom position relaxation\n"
 			text = text+ "Error in energy in the final relaxed position (Ha/atom): "+ '{0:1.2e}'.format(E_err) +"  \n"
 			text = text+ "Error in the final relaxed atom position (Bohr): "+ '{0:1.2e}'.format(scfpos_err) +"  \n"
+			text = text+"Number of SCF iteration error: "+ str(Error_SCF_no)+"\n"
 			if isparallel == True and info_run["ismemcheck"] == False:
 				text = text+"walltime error (%): "+'{0:1.2e}'.format(walltime_error)+"\n"
 			if isabinit == True:
 				text = text+"Corresponding error from ABINIT reference: \n"+"Energy error (Ha/atom): "+ '{0:1.2e}'.format(E_err_abinit)+"\n"
 				text = text+"Atom position error (Bohr): "+'{0:1.2e}'.format(scfpos_err_abinit) +"  \n"
 			text = text+text1+text2+text3
-			if (errspin <= spin_tol  and E_sys_err <= E_tol and scfpos_err <= scfpos_tol  and memlost == 0):
+			Failure_text=""
+			if (Error_SCF_no <=  scfno_tol and errspin <= spin_tol  and E_sys_err <= E_tol and scfpos_err <= scfpos_tol  and memlost == 0):
 				test_status.append("passed")
 				text="Test Result: Passed \n"+text
 			else:
+				Failure_text = Failure_text+"Test for this system "+" failed in: "
+				if (errspin > spin_tol):
+					Failure_text =  Failure_text + "Spin polarization, "
+				if (E_sys_err > E_tol):
+					Failure_text =  Failure_text + "Energy, "
+				if (scfpos_err > scfpos_tol):
+					Failure_text =  Failure_text + "Relaxed position, "
+				if (Error_SCF_no >  scfno_tol):
+					Failure_text =  Failure_text + "Number of SCF iterations, "
+				if (memlost > 0):
+					Failure_text =  Failure_text + "Memory leak, "
+				Error_message_global.append(Failure_text)
+
 				test_status.append("failed")
 				text="Test Result: Failed\n"+text
 			if walltime_error > wall_tol:
@@ -2075,6 +2161,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			if err_memused > memused_tol:
 				text = text + "Warning: Memory used exceeded"
 			texttoprint.append(text)
+			Warning_message_global.append(warning_message)
 
 
 		elif info_run["Type"]=="relax_cell":
@@ -2083,6 +2170,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			err_memused = 0
 			text2=''
 			errspin = 0
+			warning_message = ""
 			text3=''
 			if info_run["isspin"] == True:
 				if info_run["isorient"] == False:
@@ -2136,6 +2224,25 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				text = "System name: "+systems[i]+"\n"+"different relaxation iterations for the convergence hence failed!"
 			E_ref = info_ref["energy"]
 			E_run = info_run["energy"]
+			SCF_no_ref = info_ref["SCF_no"]
+			SCF_no_run = info_run["SCF_no"]
+			Error_SCF_no=0
+			if len(SCF_no_ref)!=len(SCF_no_run):
+				warning_message = warning_message+"Number of electronic steps for atom position relaxation for system "+systems[i]+" is different from the reference"
+			else:
+				Error_SCF_no = []
+				for scfno in range(len(SCF_no_run)):
+					Error_SCF_no.append(SCF_no_run[scfno] - SCF_no_ref[scfno])	
+				Error_SCF_no1=Error_SCF_no
+				Error_SCF_no = max(Error_SCF_no)
+				if Error_SCF_no < 0:
+					warning_message=warning_message+ " Number of SCF iterations are smaller (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				elif Error_SCF_no > 0:
+					warning_message=warning_message+ " Number of SCF iterations are larger (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				
+			if Error_SCF_no < 0:
+				warning_message=warning_message+" Number of SCF iterations are smaller than the reference"
+
 			# E_err_relax=[]
 			# for j in range(len(info_run["energy"])):
 			# 	E_err_relax.append(abs(E_ref[j]-E_run[j]))
@@ -2180,21 +2287,39 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			if isparallel == False or info_run["ismemcheck"] == True:
 				walltime_error = 0
 			Wall_error.append(walltime_error)
-
+			if walltime_error < 0:
+				warning_message=warning_message+" Walltime is smaller than the reference"
+			if walltime_error > wall_tol:
+				warning_message=warning_message+" Walltime exceeded by "+ str(walltime_error)+"%"
 
 
 			text = "System name: "+systems[i]+"\n"+"CELL relaxation\n"#+"Relaxation step    "+"Energy Error (Ha/atom)    "+"Stress Error (GPa)    "+"Error in cell dimesions (Bohr)\n"
 			text = text + "Error in energy in the final relaxed position (Ha/atom): "+ '{0:1.2e}'.format(E_sys_err) +"  \n"
 			text = text+ "Error in the final relaxed Cell (Bohr): "+ '{0:1.2e}'.format(cell_error) +"  \n"
+			text = text+"Number of SCF iteration error: "+ str(Error_SCF_no)+"\n"
 			if isparallel == True and info_run["ismemcheck"] == False :
 				text = text+"walltime error (%): "+'{0:1.2e}'.format(walltime_error)+"\n"
 			#text = text+"Error in stress "
 			#text = text+"Error in number of SCF iterations for convergence: "+'{0:1.2e}'.format(cell_error)+"\n"
 			text = text+text1+text2+text3
-			if (errspin <= spin_tol  and E_sys_err <= E_tol  and cell_error <= CELL_tol  and  memlost == 0):
+			Failure_text=""
+			if (Error_SCF_no <=  scfno_tol and errspin <= spin_tol  and E_sys_err <= E_tol  and cell_error <= CELL_tol  and  memlost == 0):
 				test_status.append("passed")
 				text="Test Result: Passed \n"+text
 			else:
+				Failure_text = Failure_text+"Test for this system "+" failed in: "
+				if (errspin > spin_tol):
+					Failure_text =  Failure_text + "Spin polarization, "
+				if (E_sys_err > E_tol):
+					Failure_text =  Failure_text + "Energy, "
+				if (cell_error > CELL_tol):
+					Failure_text =  Failure_text + "Relaxed Cell length, "
+				if (Error_SCF_no >  scfno_tol):
+					Failure_text =  Failure_text + "Number of SCF iterations, "
+				if (memlost > 0):
+					Failure_text =  Failure_text + "Memory leak, "
+				Error_message_global.append(Failure_text)
+
 				test_status.append("failed")
 				text="Test Result: Failed \n"+text
 			if walltime_error > wall_tol:
@@ -2202,6 +2327,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			if err_memused > memused_tol:
 				text = text + "Warning: Memory used exceeded"
 			texttoprint.append(text)
+			Warning_message_global.append(warning_message)
 
 
 		elif info_run["Type"]=="relax_total":
@@ -2210,6 +2336,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			err_memused = 0
 			text2=''
 			errspin = 0
+			warning_message = ""
 			text3=''
 			E_run = info_run["energy"]
 			no_atoms = info_run["no_atoms"]
@@ -2282,7 +2409,22 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 					E_err_abinit = max([abs(E_abinit[-1]/no_atoms-E_run[0][-1]),abs(E_abinit[-1]/no_atoms-E_run[1][-1]),abs(E_abinit[-1]/no_atoms-E_run[2][-1])])
 			E_sys_err = E_err
 			Ener_error.append(E_sys_err)
+			SCF_no_ref = info_ref["SCF_no"]
+			SCF_no_run = info_run["SCF_no"]
 
+			if len(SCF_no_ref)!=len(SCF_no_run):
+				warning_message = warning_message+"Number of electronic steps for atom position relaxation for system "+systems[i]+" is different from the reference"
+			else:
+				Error_SCF_no = []
+				for scfno in range(len(SCF_no_run)):
+					Error_SCF_no.append(SCF_no_run[scfno] - SCF_no_ref[scfno])
+				Error_SCF_no1=Error_SCF_no
+				Error_SCF_no = max(Error_SCF_no)
+				if Error_SCF_no < 0:
+					warning_message=warning_message+ " Number of SCF iterations are smaller (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				elif Error_SCF_no > 0:
+					warning_message=warning_message+ " Number of SCF iterations are larger (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				
 			# F_run = info_run["force"]
 			# F_ref = info_ref["force"]
 			# relax_steps = len(F_run)
@@ -2345,10 +2487,16 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				walltime_error = 0
 			Wall_error.append(walltime_error)
 
+			if walltime_error < 0:
+				warning_message=warning_message+" Walltime is smaller than the reference"
+			if walltime_error > wall_tol:
+				warning_message=warning_message+" Walltime exceeded by "+ str(walltime_error)+"%"
+
 			text = "System name: "+systems[i]+"\n"+"Total relaxation\n"
 			text = text+"Error in energy in the final relaxed structure (Ha/atom): "+'{0:1.2e}'.format(E_err)+"\n"
 			text = text+ "Error in the final relaxed Cell (Bohr): "+ '{0:1.2e}'.format(cell_error) +"  \n"
 			text = text+ "Error in the final relaxed atom position (Bohr): "+ '{0:1.2e}'.format(scfpos_err) +"  \n"
+			text = text+"Number of SCF iteration) error: "+ str(Error_SCF_no)+"\n"
 			if isabinit == True:
 				text = text+"Corresponding error from ABINIT reference: \n"+"Energy error (Ha/atom): "+ str(E_err_abinit)+"\n"
 				text = text+"Atom position error (Bohr): "+'{0:1.2e}'.format(scfpos_err_abinit) +"  \n"
@@ -2357,10 +2505,26 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				text = text+"walltime error (%): "+'{0:1.2e}'.format(walltime_error)+"\n"
 			#text = text+"Error in number of SCF iterations for convergence: "+str(scfno_error)+"\n"
 			text = text+text1+text2+text3
-			if (errspin <= spin_tol  and E_err <= E_tol and cell_error <= CELL_tol  and scfpos_err <= scfpos_tol and memlost == 0):
+			Failure_text = ""
+			if (Error_SCF_no <=  scfno_tol and errspin <= spin_tol  and E_err <= E_tol and cell_error <= CELL_tol  and scfpos_err <= scfpos_tol and memlost == 0):
 				test_status.append("passed")
 				text="Test Result: Passed \n"+text
 			else:
+				Failure_text = Failure_text+"Test for this system "+" failed in: "
+				if (errspin > spin_tol):
+					Failure_text =  Failure_text + "Spin polarization, "
+				if (E_sys_err > E_tol):
+					Failure_text =  Failure_text + "Energy, "
+				if (cell_error > CELL_tol):
+					Failure_text =  Failure_text + "Relaxed Cell length, "
+				if (scfpos_err > scfpos_tol):
+					Failure_text =  Failure_text + "Relaxed position, "
+				if (Error_SCF_no >  scfno_tol):
+					Failure_text =  Failure_text + "Number of SCF iterations, "
+				if (memlost > 0):
+					Failure_text =  Failure_text + "Memory leak, "
+				Error_message_global.append(Failure_text)
+
 				test_status.append("failed")
 				text="Test Result: Failed \n"+text
 			if walltime_error > wall_tol:
@@ -2368,11 +2532,13 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			if err_memused > memused_tol:
 				text = text + "Warning: Memory used exceeded"
 			texttoprint.append(text)
+			Warning_message_global.append(warning_message)
 
 
 		elif info_run["Type"]=="MD":
 
 			memlost=0
+			warning_message = ""
 			text1=''
 			err_memused = 0
 			text2=''
@@ -2434,6 +2600,18 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 			else:
 				E_ref = info_ref["energy"]
 				E_run = info_run["energy"]
+
+				SCF_no_ref = info_ref["SCF_no"]
+				SCF_no_run = info_run["SCF_no"]
+				Error_SCF_no = []
+				for scfno in range(len(SCF_no_run)):
+					Error_SCF_no.append(SCF_no_run[scfno] - SCF_no_ref[scfno])
+				Error_SCF_no1=Error_SCF_no
+				Error_SCF_no = max(Error_SCF_no)
+				if Error_SCF_no < 0:
+					warning_message=warning_message+ " Number of SCF iterations are smaller (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
+				elif Error_SCF_no > 0:
+					warning_message=warning_message+ " Number of SCF iterations are larger (" +str(Error_SCF_no)+"/"+str(SCF_no_ref[Error_SCF_no1.index(Error_SCF_no)])+") than the reference"
 				if isabinit == True:
 					E_abinit = info_abinit["energy"]
 				E_err_relax=[]
@@ -2475,6 +2653,30 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 						ken_error_abinit.append(abs(ken_abinit[j]/no_atoms-ken_ref[j]))
 				max_KENerror = max(ken_error)
 
+				velocity_run = info_run["velocity"]
+				velocity_ref = info_ref["velocity"]
+
+				velocity_error = []
+				velocity_error_relax=[]
+				#no_atoms = len(F_run[0])
+				if len(sum(velocity_run,[])) > 0:
+					for j in range(MD_iter):
+						temp= []
+						for k in range(len(velocity_run[0])):
+							temp.append([abs(velocity_run[j][k][0]-velocity_ref[j][k][0]), abs(velocity_run[j][k][1]-velocity_ref[j][k][1]), abs(velocity_run[j][k][2]-velocity_ref[j][k][2])])
+						velocity_error.append(temp)
+
+					for j in range(MD_iter):
+						temp = velocity_error[j]
+						temp = sum(temp,[])
+						velocity_error_relax.append(max(temp))
+					maxvelocity_err = max(velocity_error_relax)
+				else:
+					velocity_error_relax = [0 for md in range(MD_iter)] 
+					maxvelocity_err = 0
+					# F_error_relax_abinit = [0 for md in range(MD_iter)] 
+
+
 				F_run = info_run["force"]
 				F_ref = info_ref["force"]
 
@@ -2514,6 +2716,35 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 					F_error_relax_abinit = [0 for md in range(MD_iter)] 
 
 
+
+				ionic_stress_run = info_run["ionic_stress"]
+				ionic_stress_ref = info_ref["ionic_stress"]
+				ionic_stress_error = []
+				ionic_stress_error_relax=[]
+				if len(sum(ionic_stress_run,[]))>0:
+					for j in range(MD_iter):
+						temp= []
+						for k in range(len(ionic_stress_run[0])):
+							temp1 =[]
+							for jj in range(len(ionic_stress_run[0][k])):
+								if abs(ionic_stress_run[j][k][jj]) > 0.01:
+									temp1.append(100*(abs(ionic_stress_run[j][k][jj]-ionic_stress_ref[j][k][jj]))/abs(ionic_stress_ref[j][k][jj]))
+								else:
+									temp1.append(0)
+							temp.append(temp1)
+							#temp.append([100*(abs(stress_run[j][k][0]-stress_ref[j][k][0]))/abs(stress_ref[j][k][0]), 100*(abs(stress_run[j][k][1]-stress_ref[j][k][1]))/abs(stress_ref[j][k][1]), 100*(abs(stress_run[j][k][2]-stress_ref[j][k][2]))/abs(stress_ref[j][k][2])])
+						ionic_stress_error.append(temp)
+					for j in range(MD_iter):
+						temp = ionic_stress_error[j]
+						temp = sum(temp,[])
+						ionic_stress_error_relax.append(max(temp))
+					max_ionic_stress_error = max(ionic_stress_error_relax)
+				else:
+					ionic_stress_error_relax = [0 for md in range(MD_iter)] 
+					# stress_error_relax_abinit = [0 for md in range(MD_iter)]
+					max_ionic_stress_error= 0 
+
+
 				stress_run = info_run["stress"]
 				stress_ref = info_ref["stress"]
 				stress_error = []
@@ -2536,6 +2767,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 						temp = sum(temp,[])
 						stress_error_relax.append(max(temp))
 					max_stress_error = max(stress_error_relax)
+
 					if isabinit == True:
 						stress_abinit = info_abinit["stress"]
 						stress_error_abinit = []
@@ -2563,7 +2795,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 
 
 				# scfno_run = info_run["scfno"]
-				# scfno_ref = info_ref["scfno"]
+				# scfno_ref = info_ref["scfno"]+
 				# scfno_error = []
 				# for j in range(len(scfno_run)):
 				# 	scfno_error.append(abs(scfno_run[j]-scfno_ref[j]))
@@ -2572,9 +2804,16 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				if isparallel == False or info_run["ismemcheck"] == True:
 					walltime_error = 0
 				Wall_error.append(walltime_error)
-				text = "System name: "+systems[i]+"\n"+"MD Simulation\n"+"MD step    "+"Energy Error (Ha/atom)   "+"Ionic KE error (Ha/atom)     Force Error (Ha/Bohr)      Stress error (%)\n"
+				if walltime_error < 0:
+					warning_message=warning_message+" Walltime is smaller than the reference"
+				if walltime_error > wall_tol:
+					warning_message=warning_message+" Walltime exceeded by "+ str(walltime_error)+"%"
+
+				text = "System name: "+systems[i]+"\n"+"MD Simulation\n"+"MD step    "+"Energy Error (Ha/atom)   "+"Ionic KE error (Ha/atom)     Force Error (Ha/Bohr)      Stress error (%)      Ionic Stress error (%)      velocity error (A.U.)\n"
+				
 				for j in range(MD_iter):
-					text = text+str(j)+"   	     "+'{0:1.2e}'.format(E_err_relax[j])+"   			     "+'{0:1.2e}'.format(ken_error[j])+ "   			     " + '{0:1.2e}'.format(F_error_relax[j])+ "	   	 		   "+'{0:1.2e}'.format(stress_error_relax[j])+"\n"
+					text = text+str(j)+"   	     "+'{0:1.2e}'.format(E_err_relax[j])+"   			     "+'{0:1.2e}'.format(ken_error[j])+ "   			     " + '{0:1.2e}'.format(F_error_relax[j])+ "	   	 		   "+'{0:1.2e}'.format(stress_error_relax[j])+"	   	 		   "+'{0:1.2e}'.format(ionic_stress_error_relax[j])+"	   	 		   "+'{0:1.2e}'.format(velocity_error_relax[j])+"\n"
+				text = text+"Number of SCF iteration) error: "+ str(Error_SCF_no)+"\n"
 				if isparallel == True and info_run["ismemcheck"] == False:
 					text = text+"walltime error (%): "+str(walltime_error)+"\n"
 				#text = text+"Error in number of SCF iterations for convergence: "+str(scfno_error)+"\n"
@@ -2584,10 +2823,25 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 					for j in range(MD_iter):
 						text = text+str(j)+"   	     "+'{0:1.2e}'.format(E_err_abinit[j])+"   	     "+'{0:1.2e}'.format(ken_error_abinit[j])+"\n"
 				text = text+text1+text2+text3
-				if (errspin <= spin_tol  and E_sys_err <= E_tol   and max_KENerror <= KEN_tol and memlost == 0 and maxF_err <= F_tol):
+				Failure_text=""
+				if (Error_SCF_no <=  scfno_tol and errspin <= spin_tol  and E_sys_err <= E_tol   and max_KENerror <= KEN_tol and memlost == 0 and maxF_err <= F_tol and maxvelocity_err <= F_tol and max_ionic_stress_error <= stress_tol and max_stress_error <= stress_tol):
 					test_status.append("passed")
 					text="Test Result: Passed \n"+text
 				else:
+					Failure_text = Failure_text+"Test for this system "+" failed in: "
+					if (errspin > spin_tol):
+						Failure_text =  Failure_text + "Spin polarization, "
+					if (E_sys_err > E_tol):
+						Failure_text =  Failure_text + "Energy, "
+					if (max_KENerror > KEN_tol):
+						Failure_text =  Failure_text + "Ionic KE, "
+					if (maxF_err > F_tol):
+						Failure_text =  Failure_text + "Force, "
+					if (Error_SCF_no >  scfno_tol):
+						Failure_text =  Failure_text + "Number of SCF iterations, "
+					if (memlost > 0):
+						Failure_text =  Failure_text + "Memory leak, "
+					Error_message_global.append(Failure_text)
 					test_status.append("failed")
 					text="Test Result: Failed \n"+text
 				if walltime_error > wall_tol:
@@ -2595,6 +2849,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 				if err_memused > memused_tol:
 					text = text + "Warning: Memory used exceeded"
 				texttoprint.append(text)
+				Warning_message_global.append(warning_message)
 
 
 
@@ -2609,7 +2864,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
   ################### Printing #############################################################
 	f_report = open("Report.txt",'w')
 	f_report.write("*************************************************************************** \n")
-	f_report.write("*                   TEST REPORT (Version 06 April 2020)                    *\n*                      Date:  "+date_time+"                        * \n")
+	f_report.write("*                   TEST REPORT (Version 28 October 2021)                    *\n*                      Date:  "+date_time+"                        * \n")
 	f_report.write("*************************************************************************** \n")
 	f_report.write("Tests Passed: "+str(passtests)+"/"+str(passtests+failtests)+"\n")
 	f_report.write("Tests Failed: "+str(failtests)+"/"+str(passtests+failtests)+"\n")
@@ -2644,7 +2899,7 @@ def WriteReport(data_info, systems, isparallel, ifVHQ, isorient):
 	f_report.write("                    End for the Failed systems               \n")
 	f_report.write("*************************************************************************** \n")
 	f_report.close()
-	return(test_status)
+	return(test_status, Warning_message_global, Error_message_global)
 
 # Main python file for the testing framework
 # written by Shashikant Kumar, PhD
@@ -2659,7 +2914,50 @@ isparallel = True
 ismempbs =False
 ifVHQ = False
 isAuto = False
+is_valgrind_all = False
+temp_result =  False
 no_concurrency=6 # number of jobs running concurrently on github server
+
+if 'temp_present' in args:
+	temp_result =  True 
+	args.remove('temp_present')
+
+if len(args) == 1 and re.findall(r'run_local',args[0]) == ['run_local']:
+	systems=SYSTEMS['systemname']
+	tags_sys=SYSTEMS['Tags']
+	tols_sys=SYSTEMS['Tols']
+	isAuto =  True
+	ifVHQ = False
+	isparallel = False
+
+if len(args) == 1 and re.findall(r'clean_temp',args[0]) == ['clean_temp']:
+	systems=SYSTEMS['systemname']
+	tags_sys=SYSTEMS['Tags']
+	tols_sys=SYSTEMS['Tols']
+	count=0
+	for s in systems:
+		os.chdir(s)
+		if 'orient' in tags_sys[count]:
+			os.system("rm -r temp_run1 temp_run2 temp_run3")
+		else:
+			os.system("rm -r temp_run")
+		count=count+1
+		os.chdir("./..")
+	sys.exit("Deleted the temp files")
+
+if len(args) == 1 and re.findall(r'quick_run',args[0]) == ['quick_run']:
+	systems=['BaTiO3_quick','H2O_sheet_quick','H2O_wire_quick','SiH4_quick']
+	tags_sys = []
+	tols_sys = []
+	for i in range(len(systems)):
+		for j in range(len(SYSTEMS["systemname"])):
+			if systems[i] == SYSTEMS["systemname"][j]:
+				tags_sys.append(SYSTEMS["Tags"][j])
+				tols_sys.append(SYSTEMS["Tols"][j])
+	isAuto =  True
+	ifVHQ = False
+	isparallel = False
+
 if len(args) == 1 and re.findall(r'autosys',args[0]) == ['autosys']:
 	indx_test_temp = re.findall(r'\d+',args[0])
 	indx_test = int(indx_test_temp[0])
@@ -2711,6 +3009,11 @@ if len(args) >= 2:
 			systems=SYSTEMS['systemname']
 			tags_sys=SYSTEMS['Tags']
 			tols_sys=SYSTEMS['Tols']
+		if tags == ['valgrind_all']:
+			is_valgrind_all = True
+			systems=SYSTEMS['systemname']
+			tags_sys=SYSTEMS['Tags']
+			tols_sys=SYSTEMS['Tols']
 
 		elif tags == ['serial','memused']:
 			isparallel = False
@@ -2736,12 +3039,20 @@ if len(args) >= 2:
 			if "serial" in tags:
 				isparallel = False
 				tags.remove('serial')
+			if "valgrind_all" in tags:
+				is_valgrind_all = True;
+				tags.remove('valgrind_all')
 			if "memused" in tags:
 				ismempbs = True
 				tags.remove('memused')
 			if "VHQ" in tags:
 				ifVHQ = True
 				tags.remove('VHQ')
+			if "run_local" in tags:
+				isAuto =  True
+				ifVHQ = False
+				isparallel = False
+				tags.remove('run_local')
 			if tags == []:
 				tags_sys=SYSTEMS['Tags']
 				systems=SYSTEMS['systemname']
@@ -2780,13 +3091,25 @@ if len(args) >= 2:
 					if systems[i] == SYSTEMS["systemname"][j]:
 						tags_sys.append(SYSTEMS["Tags"][j])
 						tols_sys.append(SYSTEMS["Tols"][j])
-			
-		elif 'serial' in  args[1:]:
-			isparallel = False
-			ismempbs = True
+
+		elif ('valgrind_all' in  args[1:]):
+			is_valgrind_all = True;
 			systems = args[1:]
-			systems.remove('serial')
-			
+			systems.remove('valgrind_all')
+			tags_sys = []
+			tols_sys = []
+			for i in range(len(systems)):
+				for j in range(len(SYSTEMS["systemname"])):
+					if systems[i] == SYSTEMS["systemname"][j]:
+						tags_sys.append(SYSTEMS["Tags"][j])
+						tols_sys.append(SYSTEMS["Tols"][j])
+
+		elif 'run_local' in  args[1:]:
+			isAuto =  True
+			ifVHQ = False
+			isparallel = False
+			systems = args[1:]
+			systems.remove('run_local')
 			tags_sys = []
 			tols_sys = []
 			for i in range(len(systems)):
@@ -2826,7 +3149,7 @@ for i in range(len(systems)):
 		isspin.append(True)
 	else:
 		isspin.append(False)
-	if ("memcheck" in tags_sys[i]):
+	if ("memcheck" in tags_sys[i]) or (is_valgrind_all == True):
 		memcheck.append(True)
 	else:
 		memcheck.append(False)
@@ -2840,7 +3163,7 @@ for i in range(len(systems)):
 	elif ("relax_total_nlcg" in tags_sys[i]) or ("relax_total_lbfgs" in tags_sys[i]) or ("relax_total_fire" in tags_sys[i]):
 		singlept.append(False)
 		Type.append("relax_total")
-	elif ("md_nve" in tags_sys[i]) or ("md_nvtnh" in tags_sys[i]) or ("md_nvkg" in tags_sys[i]):
+	elif ("md_nve" in tags_sys[i]) or ("md_nvtnh" in tags_sys[i]) or ("md_nvkg" in tags_sys[i]) or ("md_npt" in tags_sys[i]):
 		singlept.append(False)
 		Type.append("MD")
 	else:
@@ -2874,7 +3197,7 @@ else:
 ######################### Launching the jobs ######################################################################
 # launch in a batch of 5 systems in a single pbs file in case of "mempbscheck == False" and in a batch of 1 otherwise
 # Input to the launch function should be  - (i) systems (ii) ifmempbs (iii) numberofprocs
-if isAuto == False:
+if isAuto == False and temp_result == False:
 	jobID = launchsystems(systems,memcheck,procs_sys,ismempbs, ifVHQ, isorient, not isparallel)
 
 ############################### Monitoring #########################################################################
@@ -2901,10 +3224,10 @@ if isAuto == False:
 					# isorient_temp.remove(isorient_temp[j])
 					temp = False
 					break
-			time.sleep(.3)
+				time.sleep(4)
 
 	print('\n')
-else:
+elif isAuto == True and temp_result == False:
 	countrun=0
 	for systs in systems:
 		print(str(countrun)+": "+systs+" started running")
@@ -2996,18 +3319,13 @@ for i in range(len(systems)):
 	if i>0:
 		try:
 			os.chdir(home_directory)
-			temp=getInfo(systems[i],singlept[i],Type[i],False,memcheck[i],ismempbs,isspin[i],ifVHQ,isorient[i],tols_sys[i])
+			temp=getInfo(systems[i],singlept[i],Type[i],False,memcheck[i],ismempbs,isspin[i],ifVHQ,isorient[i],tols_sys[i])				
 			temp1=getInfo(systems[i],singlept[i],Type[i],True,memcheck[i],ismempbs,isspin[i],ifVHQ,isorient[i],tols_sys[i])
-			# if os.path.exists('./'+systems[i]+"/"+systems[i]+".refabinitout"):
-			# 	temp2 = getInfoAbinit(systems[i],singlept[i],Type[i],isspin[i],ifVHQ)
-			# 	temp_dict = {'a': temp, 'b': temp1, 'c': temp2}
-			# 	data_info[i] = temp_dict
-			# else:
 			temp_dict = {'a': temp, 'b': temp1}
-				#data_info[i] = temp_dict
 			data_info[count_run] = temp_dict
-			sys_which_ran_idx.append(count_run)
+			sys_which_ran_idx.append(i)
 			count_run=count_run+1
+
 		except:
 			print("Warning: system named '"+systems[i]+"' has some issues: please check and rerun this system again \n")
 
@@ -3025,7 +3343,7 @@ for i in range(len(systems)):
 		isorient_which_ran.append(isorient[i])
 
 os.chdir(home_directory)
-test_status = WriteReport(data_info, sys_which_ran, isparallel, ifVHQ, isorient_which_ran)
+test_status, Warning_message_global, Error_message_global = WriteReport(data_info, sys_which_ran, isparallel, ifVHQ, isorient_which_ran)
 passtests = 0;
 failtests = 0;
 for pp in range(len(test_status)):
@@ -3038,11 +3356,31 @@ for pp in range(len(test_status)):
 CGREEN='\033[92m'
 CRED = '\033[91m'
 CWHITE='\33[0m'
+CBLUE='\033[94m'
+print('--------------------------------------------------------------\n')
 print("Total systems: "+str(passtests+failtests)+"\n")
 print(CGREEN+"Tests passed: "+str(passtests)+CWHITE+"\n")
 print(CRED+"Tests failed: "+str(failtests)+CWHITE+"\n")
 print("Detailed report available in Report.txt file \n")
 
+count_fail=0
+print('--------------------------------------------------------------\n')
+if failtests > 0:
+	print(CRED+'\033[1m'+'Failed test summary: '+CWHITE+ '\033[0m'+'\n')
+	for pp in range(len(test_status)):
+		if test_status[pp]!="passed":
+			print(CRED+str(count_fail+1)+". "+sys_which_ran[pp]+": "+Error_message_global[count_fail]+CWHITE+"\n")
+			count_fail=count_fail+1
+print('--------------------------------------------------------------\n')
+
+print('--------------------------------------------------------------\n')
+count_warn=0;
+print(CBLUE+'\033[1m'+'Warning summary: '+CWHITE+'\033[0m'+'\n')
+for pp in range(len(Warning_message_global)):
+	if Warning_message_global[pp]!="":
+		print(CBLUE+str(count_warn+1)+". "+sys_which_ran[pp]+": "+Warning_message_global[pp]+CWHITE+"\n")
+		count_warn=count_warn+1
+print('--------------------------------------------------------------\n')
 os.chdir(home_directory)
 if os.path.exists("launch_1.pbs"):
 	os.system("rm *.pbs")

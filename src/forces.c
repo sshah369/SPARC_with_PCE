@@ -31,6 +31,8 @@
 #include "isddft.h"
 #include "initialization.h"
 #include "electrostatics.h"
+#include "spinOrbitCoupling.h"
+#include "sqProperties.h"
 
 #define TEMP_TOL 1e-12
 
@@ -147,10 +149,18 @@ void Symmetrize_forces(SPARC_OBJ *pSPARC)
  */
 void Calculate_nonlocal_forces(SPARC_OBJ *pSPARC)
 {
-    if (pSPARC->isGammaPoint)
-        Calculate_nonlocal_forces_linear(pSPARC);
-    else
-        Calculate_nonlocal_forces_kpt_linear(pSPARC); 
+    if (pSPARC->isGammaPoint) {
+        if (pSPARC->SQFlag == 1) {
+            Calculate_nonlocal_forces_SQ(pSPARC);
+        } else {
+            Calculate_nonlocal_forces_linear(pSPARC);
+        }
+    } else {
+        if (pSPARC->Nspinor == 1)
+            Calculate_nonlocal_forces_kpt_linear(pSPARC); 
+        else if (pSPARC->Nspinor == 2) 
+            Calculate_nonlocal_forces_kpt_spinor_linear(pSPARC); 
+    }
 }
 
 
@@ -235,7 +245,7 @@ void Calculate_nonlocal_forces_linear(SPARC_OBJ *pSPARC)
         count = 0;
         for(spn_i = 0; spn_i < nspin; spn_i++) {
             // find dPsi in direction dim
-            Gradient_vectors_dir(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb+spn_i*size_s, pSPARC->Yorb+spn_i*size_s, dim, pSPARC->dmcomm);
+            Gradient_vectors_dir(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb+spn_i*size_s, pSPARC->Yorb, dim, pSPARC->dmcomm);
             beta = alpha + pSPARC->IP_displ[pSPARC->n_atom] * ncol * (nspin * (dim + 1) + count);
             for (ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
                 //lmax = pSPARC->psd[ityp].lmax;
@@ -245,7 +255,7 @@ void Calculate_nonlocal_forces_linear(SPARC_OBJ *pSPARC)
                     dx_rc = (double *)malloc( ndc * ncol * sizeof(double));
                     atom_index = pSPARC->Atom_Influence_nloc[ityp].atom_index[iat];
                     for (n = 0; n < ncol; n++) {
-                        dx_ptr = pSPARC->Yorb + spn_i * size_s + n * DMnd;
+                        dx_ptr = pSPARC->Yorb + n * DMnd;
                         dx_rc_ptr = dx_rc + n * ndc;
                         for (i = 0; i < ndc; i++) {
                             // dx_rc[n*ndc+i] = pSPARC->Yorb[n*DMnd+pSPARC->Atom_Influence_nloc[ityp].grid_pos[iat][i]];
@@ -394,7 +404,7 @@ void Calculate_nonlocal_forces_kpt_linear(SPARC_OBJ *pSPARC)
     double Lx = pSPARC->range_x;
     double Ly = pSPARC->range_y;
     double Lz = pSPARC->range_z;
-    double k1, k2, k3, theta, x0_i, y0_i, z0_i;
+    double k1, k2, k3, theta, kpt_vec, x0_i, y0_i, z0_i;
     double complex bloch_fac, a, b;
     
 #ifdef DEBUG 
@@ -450,8 +460,9 @@ void Calculate_nonlocal_forces_kpt_linear(SPARC_OBJ *pSPARC)
                 k1 = pSPARC->k1_loc[kpt];
                 k2 = pSPARC->k2_loc[kpt];
                 k3 = pSPARC->k3_loc[kpt];
+                kpt_vec = (dim == 0) ? k1 : ((dim == 1) ? k2 : k3);
                 // find dPsi in direction dim
-                Gradient_vectors_dir_kpt(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb_kpt+spn_i*size_s+kpt*size_k, pSPARC->Yorb_kpt+spn_i*size_s+kpt*size_k, dim, kpt, pSPARC->dmcomm);
+                Gradient_vectors_dir_kpt(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb_kpt+spn_i*size_s+kpt*size_k, pSPARC->Yorb_kpt, dim, kpt_vec, pSPARC->dmcomm);
                 beta = alpha + pSPARC->IP_displ[pSPARC->n_atom] * ncol * (Nk * nspin * (dim + 1) + count);
                 for (ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
                     //lmax = pSPARC->psd[ityp].lmax;
@@ -468,7 +479,7 @@ void Calculate_nonlocal_forces_kpt_linear(SPARC_OBJ *pSPARC)
                         atom_index = pSPARC->Atom_Influence_nloc[ityp].atom_index[iat];
                         
                         for (n = 0; n < ncol; n++) {
-                            dx_ptr = pSPARC->Yorb_kpt + spn_i * size_s + kpt * size_k + n * DMnd;
+                            dx_ptr = pSPARC->Yorb_kpt + n * DMnd;
                             dx_rc_ptr = dx_rc + n * ndc;
                             for (i = 0; i < ndc; i++) {
                                 *(dx_rc_ptr + i) = *(dx_ptr + pSPARC->Atom_Influence_nloc[ityp].grid_pos[iat][i]);

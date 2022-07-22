@@ -781,13 +781,14 @@ void Generate_PseudoChargeDensity(SPARC_OBJ *pSPARC) {
     
     // initialize to zero at the beginning of each relax/MD step
     for (i = 0; i < DMnd; i++) {
-        pSPARC->electronDens_at[i] = pSPARC->psdChrgDens[i] = 
-        pSPARC->psdChrgDens_ref[i] = pSPARC->Vc[i] = 0.0;    
+        pSPARC->electronDens_at[i] = pSPARC->electronDens_core[i] =
+        pSPARC->psdChrgDens[i] = pSPARC->psdChrgDens_ref[i] = pSPARC->Vc[i] = 0.0;    
     }
     
     for (spn_i = 1; spn_i < 2*pSPARC->Nspin-1; spn_i++) {
         for (i = 0; i < DMnd; i++) {
             pSPARC->electronDens_at[spn_i*DMnd + i] = 0.0;
+            pSPARC->electronDens_core[spn_i*DMnd + i] = 0.0;
         }
     }
 

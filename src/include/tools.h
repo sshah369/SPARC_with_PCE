@@ -12,6 +12,14 @@
 #ifndef TOOL_H
 #define TOOL_H
 
+#ifdef USE_MKL
+    #define MKL_Complex16 double complex
+    #include <mkl.h>
+#endif
+#ifdef USE_FFTW
+    #include <fftw3.h>
+#endif
+
 #include "isddft.h"
 
 typedef struct _Sortstruct {
@@ -256,6 +264,12 @@ void VectorShift(double *Vec, const int len, const double c, MPI_Comm comm);
 
 
 /**
+ * @brief   Scale a vector, x = x * c.
+ */
+void VectorScale(double *Vec, const int len, const double c, MPI_Comm comm);
+
+
+/**
  * @brief   Create a perturbed unit constant vector distributed among the given communicator. 
  *      
  */
@@ -378,7 +392,13 @@ void formatBytes(double bytes, int n, char *size_format);
 void RealSphericalHarmonic(const int len, double *x, double *y,double *z, double *r, 
                            const int l, const int m, double *Ylm);
 
-
+/**
+ * @brief   Calculate Complex spherical harmonics for given positions and given l and m. 
+ *
+ *          Only for l = 0, 1, ..., 6.
+ */
+void ComplexSphericalHarmonic(const int len, double *x, double *y,double *z, double *r, 
+                            const int l, const int m, double complex *Ylm);
 
 
 void Calc_dist(SPARC_OBJ *pSPARC, int nxp, int nyp, int nzp, double x0_i_shift, double y0_i_shift, double z0_i_shift, double *R, double rchrg, int *count_interp);
@@ -401,5 +421,77 @@ void print_vec(
     double *x, int *gridsizes, int *DMVertices, 
     char *fname, MPI_Comm comm
 );
+
+
+/**
+ * @brief   Function to check the below-tag format
+ *          Note: used in readfiles.c for readion function
+ */
+void check_below_entries(FILE *ion_fp, char *tag);
+
+/**
+ * @brief   Check the input options in ion file
+ */
+int check_num_input(FILE *fp, void *array, char TYPE);
+
+/*
+ @ brief: function to calculate a 3x3 matrix times a vector
+*/
+void matrixTimesVec_3d(double *A, double *b, double *c);
+
+/*
+ @ brief: function to calculate a 3x3 matrix times a vector
+*/
+void matrixTimesVec_3d_complex(double *A, double _Complex *b, double _Complex *c);
+
+#if defined(USE_MKL)
+/**
+ * @brief   MKL multi-dimension FFT interface, real to complex, following conjugate even distribution. 
+ */
+void MKL_MDFFT_real(double *r2c_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_out, double _Complex *r2c_3doutput);
+
+/**
+ * @brief   MKL multi-dimension FFT interface, complex to complex
+ */
+void MKL_MDFFT(double _Complex *c2c_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_out, double _Complex *c2c_3doutput);
+
+/**
+ * @brief   MKL multi-dimension iFFT interface, complex to real, following conjugate even distribution. 
+ */
+void MKL_MDiFFT_real(double _Complex *c2r_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_in, double *c2r_3doutput);
+
+/**
+ * @brief   MKL multi-dimension iFFT interface, complex to complex. 
+ */
+void MKL_MDiFFT(double _Complex *c2c_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_out, double _Complex *c2c_3doutput);
+#endif
+
+#if defined(USE_FFTW)
+/**
+ * @brief   FFTW multi-dimension FFT interface, complex to complex. 
+ */
+void FFTW_MDFFT(int *dim_sizes, double _Complex *c2c_3dinput, double _Complex *c2c_3doutput);
+
+/**
+ * @brief   FFTW multi-dimension iFFT interface, complex to complex. 
+ */
+void FFTW_MDiFFT(int *dim_sizes, double _Complex *c2c_3dinput, double _Complex *c2c_3doutput);
+
+/**
+ * @brief   FFTW multi-dimension FFT interface, real to complex. 
+ */
+void FFTW_MDFFT_real(int *dim_sizes, double *r2c_3dinput, double _Complex *r2c_3doutput);
+
+/**
+ * @brief   FFTW multi-dimension FFT interface, complex to real. 
+ */
+void FFTW_MDiFFT_real(int *dim_sizes, double _Complex *c2r_3dinput, double *c2r_3doutput);
+#endif
+
+/**
+ * @brief   Function to compute exponential integral E_n(x)
+ *          From Numerical Recipes
+ */
+double expint(const int n, const double x);
 
 #endif // TOOL_H

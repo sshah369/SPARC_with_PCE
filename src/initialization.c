@@ -7,6 +7,7 @@
  *          Phanish Suryanarayana <phanish.suryanarayana@ce.gatech.edu>
  *          Hua Huang <huangh223@gatech.edu>
  *          Edmond Chow <echow@cc.gatech.edu>
+ *          Alfredo Metere (GPU support), Lawrence Livermore National Laboratory <metere1@llnl.gov>, <alfredo.metere@xsilico.com>
  * 
  * Copyright (c) 2020 Material Physics & Mechanics Group, Georgia Tech.
  */
@@ -29,13 +30,21 @@
 #include "eigenSolverKpt.h"  // init_GTM_CheFSI_kpt()
 #include "parallelization.h"
 #include "isddft.h"
+#include "d3initialization.h"
+#include "vdWDFinitialization.h"
+#include "vdWDFgenerateKernelSpline.h"
+#include "MGGAinitialization.h"
+#include "exactExchangeInitialization.h"
+#include "spinOrbitCoupling.h"
+#include "sqInitialization.h"
+#include "sqParallelization.h"
 
 #define TEMP_TOL 1e-12
 
 #define min(x,y) ((x)<(y)?(x):(y))
 #define max(x,y) ((x)>(y)?(x):(y))
 
-#define N_MEMBR 117
+#define N_MEMBR 162
 
 
 
@@ -174,7 +183,7 @@ void Initialize(SPARC_OBJ *pSPARC, int argc, char *argv[]) {
         MPI_Bcast(&SPARC_Input, 1, SPARC_INPUT_MPI, 0, MPI_COMM_WORLD);
 #ifdef DEBUG
         t2 = MPI_Wtime();
-        if (rank == 1) printf("Broadcasting the input parameters took %.3f ms\n",(t2-t1)*1000);
+        if (rank == 0) printf("Broadcasting the input parameters took %.3f ms\n",(t2-t1)*1000);
 #endif
         // broadcast Ntypes read from ion file
         MPI_Ibcast(&pSPARC->Ntypes, 1, MPI_INT, 0, MPI_COMM_WORLD, &req);
@@ -215,24 +224,52 @@ void Initialize(SPARC_OBJ *pSPARC, int argc, char *argv[]) {
 #endif
 
     // set up sub-communicators
-    Setup_Comms(pSPARC);
-    
-    #ifdef USE_DP_SUBEIG
-    #if !defined(USE_MKL) && !defined(USE_SCALAPACK)
-    if (pSPARC->useLAPACK == 0)
-    {
-        #ifdef DEBUG
-        if (rank == 0) printf("[WARNING] ScaLAPACK is not compiled and Nstates > MAX_NS, subspace eigen-problem will be solved in sequential.\n");
+    if (pSPARC->SQFlag == 1) {
+        Setup_Comms_SQ(pSPARC);
+    } else {
+        Setup_Comms(pSPARC);
+
+        #ifdef USE_DP_SUBEIG
+        #if !defined(USE_MKL) && !defined(USE_SCALAPACK)
+        if (pSPARC->useLAPACK == 0)
+        {
+            #ifdef DEBUG
+            if (rank == 0) printf("[WARNING] ScaLAPACK is not compiled and Nstates > MAX_NS, subspace eigen-problem will be solved in sequential.\n");
+            #endif
+            pSPARC->useLAPACK = 1;
+        }
         #endif
-        pSPARC->useLAPACK = 1;
+
+        // SPARCX_ACCEL_NOTE Need to add this. Make sure it is always within "#ifdef USE_DP_SUBEIG" branch
+        // --- BEGIN. Alfredo Metere
+        #ifdef ACCEL // Activating flag for using hardware acceleration at compile time.
+        pSPARC->useACCEL = 1;
+    //	#else
+    //	pSPARC->useACCEL = 0;
+        
+
+        if (rank == 0) 
+        {	
+            char *hwaccel[2] = { "DISABLED", "ENABLED" };
+            printf ("[INFO] Hardware acceleration is %s\n", hwaccel[pSPARC->useACCEL]);
+        }
+        #endif // ACCEL
+        // --- END. Alfredo Metere
+
+        pSPARC->DP_CheFSI     = NULL;
+        pSPARC->DP_CheFSI_kpt = NULL;
+        if (pSPARC->isGammaPoint) init_DP_CheFSI(pSPARC);
+        else init_DP_CheFSI_kpt(pSPARC);
+        #endif
     }
-    #endif
-    pSPARC->DP_CheFSI     = NULL;
-    pSPARC->DP_CheFSI_kpt = NULL;
-    if (pSPARC->isGammaPoint) init_DP_CheFSI(pSPARC);
-    else init_DP_CheFSI_kpt(pSPARC);
-    #endif
     
+    // estimate memory usage here
+
+    // Allocate memory space for Exx methods
+    if (pSPARC->usefock == 1) {
+        init_exx(pSPARC);
+    }
+
 #ifdef DEBUG
     t1 = MPI_Wtime();
 #endif
@@ -243,9 +280,15 @@ void Initialize(SPARC_OBJ *pSPARC, int argc, char *argv[]) {
     t2 = MPI_Wtime();
     if (rank == 0) printf("\nCalculate_SplineDerivRadFun took %.3f ms\n",(t2-t1)*1000);
 #endif
-
-    // calculate indices for storing nonlocal inner product
-    CalculateNonlocalInnerProductIndex(pSPARC);
+    
+    if (pSPARC->SQFlag == 1) {
+        init_SQ(pSPARC);
+    } else {
+        // calculate indices for storing nonlocal inner product
+        CalculateNonlocalInnerProductIndex(pSPARC);
+        if (pSPARC->SOC_Flag == 1)
+            CalculateNonlocalInnerProductIndexSOC(pSPARC);
+    }
 
 #ifdef DEBUG
     t1 = MPI_Wtime();
@@ -256,6 +299,35 @@ void Initialize(SPARC_OBJ *pSPARC, int argc, char *argv[]) {
     t2 = MPI_Wtime();
     if (rank == 0) printf("\nCalculating rb for all atom types took %.3f ms\n",(t2-t1)*1000);
 #endif
+
+    // initialize DFT-D3
+    if (pSPARC->d3Flag == 1) {
+        if ((strcmpi(pSPARC->XC, "GGA_PBE") != 0) && (strcmpi(pSPARC->XC, "GGA_PBEsol") != 0) && (strcmpi(pSPARC->XC, "GGA_RPBE") != 0)) {
+            if (rank == 0) printf("WARNING: Cannot find D3 coefficients for this functional. DFT-D3 correction calculation canceled!\n");
+            pSPARC->d3Flag = 0;
+        }
+        else {
+            set_D3_coefficients(pSPARC); // this function is moved from electronicGroundState.c
+        }
+    }
+
+    // initialize vdW-DF
+    if (pSPARC->vdWDFFlag != 0) {
+        if ((pSPARC->vdWDFKernelGenFlag) && (rank == 0)) {
+            vdWDF_generate_kernel(pSPARC->filename); // if there is no file of kernel function and d2Spline, then generate one
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        vdWDF_initial_read_kernel(pSPARC); // read kernel function and 2nd derivative of spline functions
+        // printf("rank %d, d2 of kernel function vdWDFd2Phidk2[2][4]=%.9e\n", rank, pSPARC->vdWDFd2Phidk2[2][4]); // to verify it
+    }
+
+    // initialize metaGGA
+    if(pSPARC->mGGAflag == 1) {
+        initialize_MGGA(pSPARC);
+    }
+
+    // estimate memory usage
+    pSPARC->memory_usage = estimate_memory(pSPARC);
 
     // write initialized parameters into output file
     if (rank == 0) {
@@ -352,7 +424,7 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     pSPARC_Input->npNdx_phi = 0;      // number of processes for calculating phi in paral. over domain in x-dir
     pSPARC_Input->npNdy_phi = 0;      // number of processes for calculating phi in paral. over domain in y-dir
     pSPARC_Input->npNdz_phi = 0;      // number of processes for calculating phi in paral. over domain in z-dir
-    pSPARC_Input->eig_serial_maxns = 2000;// maximum Nstates for solving the subspace eigenproblem in serial by default,
+    pSPARC_Input->eig_serial_maxns = 10000;// maximum Nstates for solving the subspace eigenproblem in serial by default,
                                       // for Nstates greater than this value, a parallel methods will be used instead, unless 
                                       // ScaLAPACK is not compiled or useLAPACK is turned off.
     pSPARC_Input->eig_paral_blksz = 128; // block size for distributing the subspace eigenproblem
@@ -390,6 +462,8 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     pSPARC_Input->TOL_PRECOND = -1.0;         // default Kerker tolerance will be set up later, depending on the mesh size
     pSPARC_Input->precond_kerker_kTF = 1.0;    // Thomas-Fermi screening length in the Kerker preconditioner
     pSPARC_Input->precond_kerker_thresh = 0.1; // Threshold for the truncated Kerker preconditioner
+    pSPARC_Input->precond_kerker_kTF_mag = 1.0;    // Thomas-Fermi screening length in the Kerker preconditioner
+    pSPARC_Input->precond_kerker_thresh_mag = 0.1; // Threshold for the truncated Kerker preconditioner
     pSPARC_Input->precond_resta_q0 = 1.36;
     pSPARC_Input->precond_resta_Rs = 2.76;
 
@@ -397,10 +471,12 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
 
     /* default mixing */
     pSPARC_Input->MixingVariable = -1;        // default mixing variabl (will be set to 'density' mixing)
-    pSPARC_Input->MixingPrecond = -1;         // default mixing preconditioner (will be set to'kerker'
-                                              // for 'density' mixing, and 'none' for 'potential' mixing)
+    pSPARC_Input->MixingPrecond = -1;         // default mixing preconditioner (will be set later)
+    pSPARC_Input->MixingPrecondMag = -1;      // default mixing preconditioner for magnetization density/potential (will be set later)
     pSPARC_Input->MixingParameter = 0.3;      // default mixing parameter
     pSPARC_Input->MixingParameterSimple = -1.0;     // default mixing parameter for simple mixing step (will be set up later)
+    pSPARC_Input->MixingParameterMag = -1.0;   // default mixing parameter for magnetization density/potential
+    pSPARC_Input->MixingParameterSimpleMag = -1.0; // default mixing parameter for magnetization density/potential in simple mixing step (will be set up later)
     pSPARC_Input->MixingHistory = 7;          // default mixing history
     pSPARC_Input->PulayFrequency = 1;         // default Pulay frequency
     pSPARC_Input->PulayRestartFlag = 0;       // default Pulay restart flag
@@ -436,6 +512,10 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     pSPARC_Input->range_x = -1.0;
     pSPARC_Input->range_y = -1.0;
     pSPARC_Input->range_z = -1.0;
+    pSPARC_Input->Flag_latvec_scale = 0;
+    pSPARC_Input->latvec_scale_x = -1.0;
+    pSPARC_Input->latvec_scale_y = -1.0;
+    pSPARC_Input->latvec_scale_z = -1.0;
     pSPARC_Input->BC = -1;                    // default BC will be set up after reading input
 	pSPARC_Input->BCx = -1;
 	pSPARC_Input->BCy = -1;
@@ -469,6 +549,18 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     pSPARC_Input->ion_vel_dstr_rand = 0;      // default initial velocity are fixed (different runs give the same answer)
     pSPARC_Input->qmass = 40.0 * CONST_FS2ATU; // default values of thermostat parameter mass (a.u.)
     pSPARC_Input->TWtime = 1000000000;        // default value of walltime in min
+    pSPARC_Input->NPTscaleVecs[0] = 1; 
+    pSPARC_Input->NPTscaleVecs[1] = 1; 
+    pSPARC_Input->NPTscaleVecs[2] = 1;        // default lattice vectors to be rescaled in NPT
+    pSPARC_Input->NPT_NHnnos = 0;                   // default amount of thermo variable for NPT_NH. If MDMeth is this but nnos is 0, program will stop
+    for (int subscript_NPTNH_qmass = 0; subscript_NPTNH_qmass < L_QMASS; subscript_NPTNH_qmass++){
+        pSPARC_Input->NPT_NHqmass[subscript_NPTNH_qmass] = 0.0;
+    }                                         // default mass of thermo variables for NPT_NH. If MDMeth is this but one of qmass is 0, program will stop
+    pSPARC_Input->NPT_NHbmass = 0.0;          // default mass of baro variable for NPT_NH. If MDMeth is this but bmass is 0, program will stop
+    pSPARC_Input->prtarget = 0.0;             // default target pressure for NPT_NH.
+
+    pSPARC_Input->NPT_NP_qmass = 0.0;         // default mass of thermo variables for NPT_NP. If MDMeth is this but qmass is 0, program will stop
+    pSPARC_Input->NPT_NP_bmass = 0.0;         // default mass of thermo variables for NPT_NP. If MDMeth is this but bmass is 0, program will stop
 
     /* Default Relax parameters */
     pSPARC_Input->NLCG_sigma = 0.5;
@@ -485,6 +577,14 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     /* Default cell relaxation parameters*/
     pSPARC_Input->max_dilatation = 1.06;      // maximum lattice dilatation
     pSPARC_Input->TOL_RELAX_CELL = 1e-2;      // in GPa (all periodic)
+
+    /* Default DFT-D3 correction */
+    pSPARC_Input->d3Flag = 0;
+    pSPARC_Input->d3Rthr = 1600.0;
+    pSPARC_Input->d3Cn_thr = 625.0;
+
+    /* Default vdW-DF option */
+    pSPARC_Input->vdWDFKernelGenFlag = 1;
 
     /* Default stress flags*/
     pSPARC_Input->Calc_stress = 0;
@@ -503,6 +603,41 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
     pSPARC_Input->Printrestart_fq = 1;        // Steps after which the output is written in the restart file
     /* Default pSPARC members */
     pSPARC->is_default_psd = 0;               // default pseudopotential path is disabled
+
+    /* Default Exact exchange potential */    
+    pSPARC_Input->TOL_FOCK = -1.0;            // default tolerance for Fock operator 
+    pSPARC_Input->TOL_SCF_INIT = -1.0;        // default tolerance for first PBE SCF
+    pSPARC_Input->MAXIT_FOCK = 20;            // default maximum number of iterations for Hartree-Fock outer loop
+    pSPARC_Input->MINIT_FOCK = 1;             // default minimum number of iterations for Hartree-Fock outer loop
+    pSPARC_Input->EXXMeth_Flag = 0;           // default method to solve Poisson's equation of Exact Exchange in Fourier space
+    pSPARC_Input->ACEFlag = 1;                // default setting for not using ACE operator
+    pSPARC_Input->EXXMem_batch = 0;           // default setting for using high memory option
+    pSPARC_Input->EXXACEVal_state = 3;        // default setting for using high memory option
+    pSPARC_Input->EXXDownsampling[0] = 1;     // default setting for downsampling, using full k-points
+    pSPARC_Input->EXXDownsampling[1] = 1;     // default setting for downsampling, using full k-points
+    pSPARC_Input->EXXDownsampling[2] = 1;     // default setting for downsampling, using full k-points
+    pSPARC_Input->EXXDiv_Flag = -1;           // default setting for singularity in exact exchange, default spherical trucation    
+    pSPARC_Input->hyb_range_fock = 0.1587;    // default using VASP's HSE03 value
+    pSPARC_Input->hyb_range_pbe = 0.1587;     // default using VASP's HSE03 value
+
+    /* Default parameter for spin-orbit coupling */
+    pSPARC->Nspinor = 1;
+    pSPARC->SOC_Flag = 0;
+
+    /* Default SQ method option */
+    pSPARC_Input->SQFlag = 0;
+    pSPARC_Input->SQ_typ_dm = 2;                // default using Gauss quadrature for density matrix
+    pSPARC_Input->SQ_gauss_mem = 0;             // default not saving Lanczos vectors and eigenvectors 
+    pSPARC_Input->SQ_npl_c = -1;
+    pSPARC_Input->SQ_npl_g = -1;
+    pSPARC_Input->SQ_EigshiftFlag = 0;
+    pSPARC_Input->SQ_rcut = -1;
+    pSPARC_Input->SQ_fac_g2c = 2.0;
+    pSPARC_Input->SQ_tol_occ = 1e-6;
+    pSPARC_Input->SQ_eigshift = 5;
+    pSPARC_Input->npNdx_SQ = 0;
+    pSPARC_Input->npNdy_SQ = 0;
+    pSPARC_Input->npNdz_SQ = 0;
 }
 
 
@@ -512,7 +647,7 @@ void set_defaults(SPARC_INPUT_OBJ *pSPARC_Input, SPARC_OBJ *pSPARC) {
  */
 void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
     int i, l, rank, position, l_buff, Ntypes, n_atom, nproj, lmax_sum, size_sum, nprojsize_sum, nproj_sum;
-    int *tempbuff, *is_r_uniformv, *pspxcv, *lmaxv, *sizev, *pplv, *ppl_sdispl;
+    int *tempbuff, *is_r_uniformv, *pspxcv, *pspsocv, *lmaxv, *sizev, *pplv, *pplv_soc, *ppl_sdispl, *ppl_soc_sdispl;
     char *buff;
 
 #ifdef DEBUG
@@ -527,28 +662,35 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
     sizev = (int *)malloc( Ntypes * sizeof(int) );
     is_r_uniformv = (int *)malloc( Ntypes * sizeof(int) );
     pspxcv = (int *)malloc( Ntypes * sizeof(int) );
+    pspsocv = (int *)malloc( Ntypes * sizeof(int) );
     ppl_sdispl = (int *)malloc( (Ntypes+1) * sizeof(int) );
-    tempbuff = (int *)malloc( (4*Ntypes+1) * sizeof(int) );
+    tempbuff = (int *)malloc( (5*Ntypes+3) * sizeof(int) );
     assert(lmaxv != NULL && sizev != NULL && is_r_uniformv != NULL 
-        && pspxcv!= NULL && ppl_sdispl != NULL && tempbuff != NULL);
+        && pspxcv!= NULL && pspsocv!= NULL && ppl_sdispl != NULL 
+        && tempbuff != NULL);
 
     // send n_atom, lmax, size
     if (rank == 0) {
         // pack the info. into temp. buffer
         tempbuff[0] = pSPARC->n_atom;
+        tempbuff[1] = pSPARC->Nspinor;
+        tempbuff[2] = pSPARC->SOC_Flag;
         for (i = 0; i < Ntypes; i++) {
             lmaxv[i] = pSPARC->psd[i].lmax;
             sizev[i] = pSPARC->psd[i].size;
             pspxcv[i] = pSPARC->psd[i].pspxc;
             is_r_uniformv[i] = pSPARC->psd[i].is_r_uniform;
+            pspsocv[i] = pSPARC->psd[i].pspsoc;
             //pplv[i] = pSPARC->psd[i].ppl;
-            tempbuff[i+1] = lmaxv[i];
-            tempbuff[i+Ntypes+1] = sizev[i];
-            tempbuff[i+2*Ntypes+1] = pspxcv[i];
-            tempbuff[i+3*Ntypes+1] = is_r_uniformv[i];
+            tempbuff[i+3] = lmaxv[i];
+            tempbuff[i+Ntypes+3] = sizev[i];
+            tempbuff[i+2*Ntypes+3] = pspxcv[i];
+            tempbuff[i+3*Ntypes+3] = is_r_uniformv[i];
+            tempbuff[i+4*Ntypes+3] = pspsocv[i];
+
             //tempbuff[i+2*Ntypes+1] = pplv[i];
         }
-        MPI_Bcast( tempbuff, 4*Ntypes+1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast( tempbuff, 5*Ntypes+3, MPI_INT, 0, MPI_COMM_WORLD);
 
         // pack psd[i].ppl[l] and bcast
         ppl_sdispl[0] = 0;
@@ -569,24 +711,28 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
 #ifdef DEBUG
         t1 = MPI_Wtime();
 #endif
-        MPI_Bcast( tempbuff, 4*Ntypes+1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast( tempbuff, 5*Ntypes+3, MPI_INT, 0, MPI_COMM_WORLD);
 
 #ifdef DEBUG
         t2 = MPI_Wtime();
-        if (rank == 1) printf("Bcast pre-info. took %.3f ms\n", (t2-t1)*1000);
+        if (rank == 0) printf("Bcast pre-info. took %.3f ms\n", (t2-t1)*1000);
 #endif
         // unpack info.
         pSPARC->n_atom = tempbuff[0];
+        pSPARC->Nspinor = tempbuff[1];
+        pSPARC->SOC_Flag = tempbuff[2];
         for (i = 0; i < Ntypes; i++) {
-            lmaxv[i] = tempbuff[i+1];
-            sizev[i] = tempbuff[i+Ntypes+1];
-            pspxcv[i] = tempbuff[i+2*Ntypes+1];
-            is_r_uniformv[i] = tempbuff[i+3*Ntypes+1];
+            lmaxv[i] = tempbuff[i+3];
+            sizev[i] = tempbuff[i+Ntypes+3];
+            pspxcv[i] = tempbuff[i+2*Ntypes+3];
+            is_r_uniformv[i] = tempbuff[i+3*Ntypes+3];
+            pspsocv[i] = tempbuff[i+4*Ntypes+3];
             //pplv[i] = tempbuff[i+2*Ntypes+1];
             pSPARC->psd[i].lmax = lmaxv[i];
             pSPARC->psd[i].size = sizev[i];
             pSPARC->psd[i].pspxc = pspxcv[i];
             pSPARC->psd[i].is_r_uniform = is_r_uniformv[i];
+            pSPARC->psd[i].pspsoc = pspsocv[i];
             //pSPARC->psd[i].ppl = pplv[i];
         }
 
@@ -608,6 +754,34 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
     }
     n_atom = pSPARC->n_atom;
 
+    if (pSPARC->SOC_Flag == 1) {
+        ppl_soc_sdispl = (int *)malloc( (Ntypes+1) * sizeof(int) );
+        // pack psd[i].ppl[l] and bcast
+        ppl_soc_sdispl[0] = 0;
+        for (i = 0; i < Ntypes; i++) {
+            ppl_soc_sdispl[i+1] = ppl_soc_sdispl[i] + pspsocv[i] * lmaxv[i]; // l from 1 to lmax
+        }
+        pplv_soc = (int *)malloc( ppl_soc_sdispl[Ntypes] * sizeof(int) );
+        
+        if (rank == 0) {
+            for (i = 0; i < Ntypes; i++) {
+                if (!pspsocv[i]) continue;
+                for (l = 1; l <= lmaxv[i]; l++) {
+                    pplv_soc[ppl_soc_sdispl[i]+l-1] = pSPARC->psd[i].ppl_soc[l-1];
+                }
+            }
+            MPI_Bcast( pplv_soc, ppl_soc_sdispl[Ntypes], MPI_INT, 0, MPI_COMM_WORLD);
+        } else {
+            MPI_Bcast( pplv_soc, ppl_soc_sdispl[Ntypes], MPI_INT, 0, MPI_COMM_WORLD);
+            for (i = 0; i < Ntypes; i++) {
+                pSPARC->psd[i].ppl_soc = (int *)malloc(lmaxv[i] * sizeof(int));
+                for (l = 1; l <= lmaxv[i]; l++) {
+                    pSPARC->psd[i].ppl_soc[l-1] = pplv_soc[ppl_soc_sdispl[i]+l-1];
+                }
+            }
+        }
+    }
+
     // allocate memory for buff, the extra 16*(Ntypes+3*n_atom) byte is spare memory
     lmax_sum = 0;
     size_sum = 0;
@@ -625,7 +799,22 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
         nproj_sum += nproj;
         nprojsize_sum += nproj * sizev[i];
     }
-    l_buff = (3*Ntypes + 3*n_atom + 4*size_sum + lmax_sum + nproj_sum + nprojsize_sum + n_atom) * sizeof(double)
+
+    int nprojso, nprojso_sum, nprojsosize_sum;
+    nprojso_sum = nprojsosize_sum = 0;
+    if (pSPARC->SOC_Flag == 1) {
+        for (i = 0; i < Ntypes; i++) {
+            if (!pSPARC->psd[i].pspsoc) continue;
+            nprojso = 0;
+            for (l = 1; l <= lmaxv[i]; l++) {
+                nprojso += pSPARC->psd[i].ppl_soc[l-1];
+            }
+            nprojso_sum += nprojso;
+            nprojsosize_sum += nprojso * sizev[i];
+        }
+    }
+
+    l_buff = (3*Ntypes + 3*n_atom + 4*size_sum + lmax_sum + nproj_sum + nprojsize_sum + nprojsosize_sum + nprojsosize_sum + n_atom) * sizeof(double)
              + (5*Ntypes + 3*n_atom) * sizeof(int)
              + Ntypes * (L_PSD + L_ATMTYPE) * sizeof(char)
              + 0*(Ntypes+3*n_atom) *16; // last term is spare memory in case
@@ -660,6 +849,15 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
             MPI_Pack(pSPARC->psd[i].rc, lmaxv[i]+1, MPI_DOUBLE, buff, l_buff, &position, MPI_COMM_WORLD);
             MPI_Pack(pSPARC->psd[i].Gamma, nproj, MPI_DOUBLE, buff, l_buff, &position, MPI_COMM_WORLD);
             MPI_Pack(pSPARC->psd[i].rho_c_table, sizev[i], MPI_DOUBLE, buff, l_buff, &position, MPI_COMM_WORLD);
+               
+            if (pSPARC->psd[i].pspsoc) {
+                nprojso = 0;
+                for (l = 1; l <= lmaxv[i]; l++) {
+                    nprojso += pSPARC->psd[i].ppl_soc[l-1];
+                }
+                MPI_Pack(pSPARC->psd[i].Gamma_soc, nprojso, MPI_DOUBLE, buff, l_buff, &position, MPI_COMM_WORLD);
+                MPI_Pack(pSPARC->psd[i].UdV_soc, nprojso*sizev[i], MPI_DOUBLE, buff, l_buff, &position, MPI_COMM_WORLD);
+            }
         }
         // broadcast the packed buffer
         MPI_Bcast(buff, l_buff, MPI_PACKED, 0, MPI_COMM_WORLD);
@@ -705,11 +903,19 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
             // check if memory is allocated successfully!
             if (pSPARC->psd[i].RadialGrid == NULL || pSPARC->psd[i].UdV == NULL ||
                 pSPARC->psd[i].rVloc == NULL || pSPARC->psd[i].rhoIsoAtom == NULL ||
-                pSPARC->psd[i].rc == NULL || pSPARC->psd[i].Gamma == NULL || 
+                pSPARC->psd[i].rc == NULL || pSPARC->psd[i].Gamma == NULL ||
                 pSPARC->psd[i].rho_c_table == NULL)
             {
                 printf("\nmemory cannot be allocated5\n");
                 exit(EXIT_FAILURE);
+            }
+            if (pSPARC->psd[i].pspsoc) {
+                nprojso = 0;
+                for (l = 1; l <= lmaxv[i]; l++) {
+                    nprojso += pSPARC->psd[i].ppl_soc[l-1];
+                }
+                pSPARC->psd[i].Gamma_soc = (double *)malloc(nprojso * sizeof(double));
+                pSPARC->psd[i].UdV_soc = (double *)malloc(nprojso * sizev[i] * sizeof(double));
             }
         }
 #ifdef DEBUG
@@ -719,7 +925,7 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
         MPI_Bcast(buff, l_buff, MPI_PACKED, 0, MPI_COMM_WORLD);
 #ifdef DEBUG
         t2 = MPI_Wtime();
-        if (rank == 1) printf("MPI_Bcast packed buff of length %d took %.3f ms\n", l_buff,(t2-t1)*1000);
+        if (rank == 0) printf("MPI_Bcast packed buff of length %d took %.3f ms\n", l_buff,(t2-t1)*1000);
 #endif
         // unpack the variables
         position = 0;
@@ -748,6 +954,14 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
             MPI_Unpack(buff, l_buff, &position, pSPARC->psd[i].rc,  lmaxv[i]+1, MPI_DOUBLE, MPI_COMM_WORLD);
             MPI_Unpack(buff, l_buff, &position, pSPARC->psd[i].Gamma,  nproj, MPI_DOUBLE, MPI_COMM_WORLD);
             MPI_Unpack(buff, l_buff, &position, pSPARC->psd[i].rho_c_table, sizev[i], MPI_DOUBLE, MPI_COMM_WORLD);
+            if (pSPARC->psd[i].pspsoc) {
+                nprojso = 0;
+                for (l = 1; l <= lmaxv[i]; l++) {
+                    nprojso += pSPARC->psd[i].ppl_soc[l-1];
+                }
+                MPI_Unpack(buff, l_buff, &position, pSPARC->psd[i].Gamma_soc,  nprojso, MPI_DOUBLE, MPI_COMM_WORLD);
+                MPI_Unpack(buff, l_buff, &position, pSPARC->psd[i].UdV_soc, nprojso*sizev[i], MPI_DOUBLE, MPI_COMM_WORLD);
+            }
         }
     }
 
@@ -756,10 +970,15 @@ void bcast_SPARC_Atom(SPARC_OBJ *pSPARC) {
     free(ppl_sdispl);
     free(is_r_uniformv);
     free(pspxcv);
+    free(pspsocv);
     free(pplv);
     free(lmaxv);
     free(sizev);
     free(buff);
+    if (pSPARC->SOC_Flag == 1) {
+        free(ppl_soc_sdispl);
+        free(pplv_soc);
+    }
 }
 
 
@@ -794,6 +1013,7 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->MDFlag = pSPARC_Input->MDFlag;
     pSPARC->RelaxFlag = pSPARC_Input->RelaxFlag;
     pSPARC->RestartFlag = pSPARC_Input->RestartFlag;
+    pSPARC->Flag_latvec_scale = pSPARC_Input->Flag_latvec_scale;
     pSPARC->numIntervals_x = pSPARC_Input->numIntervals_x;
     pSPARC->numIntervals_y = pSPARC_Input->numIntervals_y;
     pSPARC->numIntervals_z = pSPARC_Input->numIntervals_z;
@@ -818,6 +1038,7 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->Relax_Niter = pSPARC_Input->Relax_Niter;
     pSPARC->MixingVariable = pSPARC_Input->MixingVariable;
     pSPARC->MixingPrecond = pSPARC_Input->MixingPrecond;
+    pSPARC->MixingPrecondMag = pSPARC_Input->MixingPrecondMag;
     pSPARC->MixingHistory = pSPARC_Input->MixingHistory;
     pSPARC->PulayFrequency = pSPARC_Input->PulayFrequency;
     pSPARC->PulayRestartFlag = pSPARC_Input->PulayRestartFlag;
@@ -840,6 +1061,10 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->Printrestart_fq = pSPARC_Input->Printrestart_fq;
     pSPARC->elec_T_type = pSPARC_Input->elec_T_type;
     pSPARC->MD_Nstep = pSPARC_Input->MD_Nstep;
+    pSPARC->NPTscaleVecs[0] = pSPARC_Input->NPTscaleVecs[0];
+    pSPARC->NPTscaleVecs[1] = pSPARC_Input->NPTscaleVecs[1];
+    pSPARC->NPTscaleVecs[2] = pSPARC_Input->NPTscaleVecs[2];
+    pSPARC->NPT_NHnnos = pSPARC_Input->NPT_NHnnos;
     pSPARC->ion_elec_eqT = pSPARC_Input->ion_elec_eqT;
     pSPARC->ion_vel_dstr = pSPARC_Input->ion_vel_dstr;
     pSPARC->ion_vel_dstr_rand = pSPARC_Input->ion_vel_dstr_rand;
@@ -848,14 +1073,38 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->L_lineopt = pSPARC_Input->L_lineopt;
     pSPARC->Calc_stress = pSPARC_Input->Calc_stress;
     pSPARC->Calc_pres = pSPARC_Input->Calc_pres;
+    pSPARC->d3Flag = pSPARC_Input->d3Flag;
+    pSPARC->vdWDFKernelGenFlag = pSPARC_Input->vdWDFKernelGenFlag;
+    pSPARC->MAXIT_FOCK = pSPARC_Input->MAXIT_FOCK;
+    pSPARC->EXXMeth_Flag = pSPARC_Input->EXXMeth_Flag;
+    pSPARC->ACEFlag = pSPARC_Input->ACEFlag;
+    pSPARC->EXXMem_batch = pSPARC_Input->EXXMem_batch;
+    pSPARC->EXXACEVal_state = pSPARC_Input->EXXACEVal_state;
+    pSPARC->EXXDiv_Flag = pSPARC_Input->EXXDiv_Flag;
+    pSPARC->EXXDownsampling[0] = pSPARC_Input->EXXDownsampling[0];
+    pSPARC->EXXDownsampling[1] = pSPARC_Input->EXXDownsampling[1];
+    pSPARC->EXXDownsampling[2] = pSPARC_Input->EXXDownsampling[2];
+    pSPARC->MINIT_FOCK = pSPARC_Input->MINIT_FOCK;
+    pSPARC->SQFlag = pSPARC_Input->SQFlag;
+    pSPARC->SQ_typ_dm = pSPARC_Input->SQ_typ_dm;
+    pSPARC->SQ_gauss_mem = pSPARC_Input->SQ_gauss_mem;
+    pSPARC->SQ_npl_c = pSPARC_Input->SQ_npl_c;
+    pSPARC->SQ_npl_g = pSPARC_Input->SQ_npl_g;
+    pSPARC->SQ_EigshiftFlag = pSPARC_Input->SQ_EigshiftFlag;
+    pSPARC->npNdx_SQ = pSPARC_Input->npNdx_SQ;
+    pSPARC->npNdy_SQ = pSPARC_Input->npNdy_SQ;
+    pSPARC->npNdz_SQ = pSPARC_Input->npNdz_SQ;
     // double type values
     pSPARC->range_x = pSPARC_Input->range_x;
     pSPARC->range_y = pSPARC_Input->range_y;
     pSPARC->range_z = pSPARC_Input->range_z;
     if (pSPARC->range_x <= 0.0 || pSPARC->range_y <= 0.0 || pSPARC->range_z <= 0.0) {
-        if (!rank) printf("\nError: Please specify valid CELL dimensions!\n");
+        if (!rank) printf("\nERROR: Please specify valid CELL dimensions!\n");
         exit(EXIT_FAILURE);
     }
+    pSPARC->latvec_scale_x = pSPARC_Input->latvec_scale_x;
+    pSPARC->latvec_scale_y = pSPARC_Input->latvec_scale_y;
+    pSPARC->latvec_scale_z = pSPARC_Input->latvec_scale_z;
     // allocate the memory for lattice vector array
     for(i = 0; i < 9; i++)
         pSPARC->LatVec[i] = pSPARC_Input->LatVec[i];
@@ -875,6 +1124,8 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->POISSON_SOLVER = pSPARC_Input->Poisson_solver;
     pSPARC->precond_kerker_kTF = pSPARC_Input->precond_kerker_kTF;
     pSPARC->precond_kerker_thresh = pSPARC_Input->precond_kerker_thresh;
+    pSPARC->precond_kerker_kTF_mag = pSPARC_Input->precond_kerker_kTF_mag;
+    pSPARC->precond_kerker_thresh_mag = pSPARC_Input->precond_kerker_thresh_mag;
     pSPARC->precond_resta_q0 = pSPARC_Input->precond_resta_q0;
     pSPARC->precond_resta_Rs = pSPARC_Input->precond_resta_Rs;
     pSPARC->REFERENCE_CUTOFF = pSPARC_Input->REFERENCE_CUTOFF;
@@ -882,11 +1133,20 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->elec_T = pSPARC_Input->elec_T;
     pSPARC->MixingParameter = pSPARC_Input->MixingParameter;
     pSPARC->MixingParameterSimple = pSPARC_Input->MixingParameterSimple;
+    pSPARC->MixingParameterMag = pSPARC_Input->MixingParameterMag;
+    pSPARC->MixingParameterSimpleMag = pSPARC_Input->MixingParameterSimpleMag;
     pSPARC->MD_dt = pSPARC_Input->MD_dt;
     pSPARC->ion_T = pSPARC_Input->ion_T;
     pSPARC->thermos_Tf = pSPARC_Input->thermos_Tf;
     pSPARC->qmass = pSPARC_Input->qmass;
     pSPARC->TWtime = pSPARC_Input->TWtime;// buffer time
+    for (i = 0; i < pSPARC->NPT_NHnnos; i++) {
+        pSPARC->NPT_NHqmass[i] = pSPARC_Input->NPT_NHqmass[i];
+    }
+    pSPARC->NPT_NHbmass = pSPARC_Input->NPT_NHbmass;
+    pSPARC->prtarget = pSPARC_Input->prtarget;
+    pSPARC->NPT_NP_bmass = pSPARC_Input->NPT_NP_bmass;
+    pSPARC->NPT_NP_qmass = pSPARC_Input->NPT_NP_qmass;
     pSPARC->NLCG_sigma = pSPARC_Input->NLCG_sigma;
     pSPARC->L_finit_stp = pSPARC_Input->L_finit_stp;
     pSPARC->L_maxmov = pSPARC_Input->L_maxmov;
@@ -896,36 +1156,84 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->FIRE_maxmov = pSPARC_Input->FIRE_maxmov;
     pSPARC->max_dilatation = pSPARC_Input->max_dilatation;
     pSPARC->TOL_RELAX_CELL = pSPARC_Input->TOL_RELAX_CELL;
+    pSPARC->d3Rthr = pSPARC_Input->d3Rthr;
+    pSPARC->d3Cn_thr = pSPARC_Input->d3Cn_thr;
+    pSPARC->TOL_FOCK = pSPARC_Input->TOL_FOCK;
+    pSPARC->TOL_SCF_INIT = pSPARC_Input->TOL_SCF_INIT;
+    pSPARC->hyb_range_fock = pSPARC_Input->hyb_range_fock;
+    pSPARC->hyb_range_pbe = pSPARC_Input->hyb_range_pbe;
+    pSPARC->SQ_rcut = pSPARC_Input->SQ_rcut;
+    pSPARC->SQ_fac_g2c = pSPARC_Input->SQ_fac_g2c;
+    pSPARC->SQ_tol_occ = pSPARC_Input->SQ_tol_occ;
+    pSPARC->SQ_eigshift = pSPARC_Input->SQ_eigshift;
+
     // char type values
     strncpy(pSPARC->MDMeth , pSPARC_Input->MDMeth,sizeof(pSPARC->MDMeth));
     strncpy(pSPARC->RelaxMeth , pSPARC_Input->RelaxMeth,sizeof(pSPARC->RelaxMeth));
     strncpy(pSPARC->XC, pSPARC_Input->XC,sizeof(pSPARC->XC));
     if (strcmp(pSPARC->XC,"UNDEFINED") == 0) {
-        if (!rank) printf("\nError: Please specify XC type!\n");
+        if (!rank) printf("\nERROR: Please specify XC type!\n");
         exit(EXIT_FAILURE);
     }
 
     // check XC compatibility with pseudopotential
-    if (rank == 0) {
-        int ixc = 0; // input XC
-        if (strcmpi(pSPARC->XC, "LDA_PZ") == 0) {
-            ixc = 2;
-        } else if (strcmpi(pSPARC->XC, "LDA_PW") == 0) {
-            ixc = 7;
-        } else if (strcmpi(pSPARC->XC, "GGA_PBE") == 0) {
-            ixc = 11;
-        } else if (strcmpi(pSPARC->XC, "GGA_RPBE") == 0) {
-            ixc = 15;
-        } else if (strcmpi(pSPARC->XC, "GGA_PBEsol") == 0) {
-            ixc = 116;
+    pSPARC->usefock = 0;                    // default: no fock operator 
+    pSPARC->hyb_mixing = 0.0;               // default: no mixing
+    int ixc = 0; // input XC
+    if (strcmpi(pSPARC->XC, "LDA_PZ") == 0) {
+        ixc = 2;
+    } else if (strcmpi(pSPARC->XC, "LDA_PW") == 0) {
+        ixc = 7;
+    } else if (strcmpi(pSPARC->XC, "GGA_PBE") == 0) {
+        ixc = 11;
+    } else if (strcmpi(pSPARC->XC, "GGA_RPBE") == 0) {
+        ixc = 15;
+    } else if (strcmpi(pSPARC->XC, "GGA_PBEsol") == 0) {
+        ixc = 116;
+    } else if (strcmpi(pSPARC->XC, "HF") == 0) {
+        ixc = 40;
+        pSPARC->usefock = 1;
+        pSPARC->hyb_mixing = 1;
+    } else if (strcmpi(pSPARC->XC, "PBE0") == 0) {
+        ixc = 41;
+        pSPARC->usefock = 1;
+        pSPARC->hyb_mixing = 0.25;
+    } else if (strcmpi(pSPARC->XC, "HSE") == 0) {
+        ixc = 427;
+        pSPARC->usefock = 1;
+        pSPARC->hyb_mixing = 0.25;
+    } else if (strcmpi(pSPARC->XC, "SCAN") == 0) {
+        ixc = -263267;
+    } else if (strcmpi(pSPARC->XC, "vdWDF1") == 0) {
+        ixc = -102; // this is the index of Zhang-Yang revPBE exchange in Libxc
+    } else if (strcmpi(pSPARC->XC, "vdWDF2") == 0) {
+        ixc = -108; // this is the index of PW86 exchange in Libxc
+    }
+    for (int ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
+        if (!pSPARC->usefock && pSPARC->psd[ityp].pspxc != ixc) {
+            if (!rank) printf(YEL "\nWARNING: Pseudopotential file for atom type %s has pspxc = %d,\n"
+                    "not equal to input ixc = %d (%s). Be careful with the result.\n" RESET, 
+                    &pSPARC->atomType[ityp*L_ATMTYPE], pSPARC->psd[ityp].pspxc, ixc, pSPARC->XC);
         }
-        for (int ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
-            if (pSPARC->psd[ityp].pspxc != ixc) {
-                printf(YEL "\nWARNING: Pseudopotential file for atom type %s has pspxc = %d,\n"
-                       "not equal to input ixc = %d (%s). Be careful with the result.\n" RESET, 
-                       &pSPARC->atomType[ityp*L_ATMTYPE], pSPARC->psd[ityp].pspxc, ixc, pSPARC->XC);
-            }
+        if (pSPARC->usefock && pSPARC->psd[ityp].pspxc != 11) {
+            if (!rank) printf(YEL "\nWARNING: Pseudopotential file for atom type %s has pspxc = %d,\n"
+                    "while hybrid calculation needs a PBE pseudopotential. Be careful with the result.\n" RESET, 
+                    &pSPARC->atomType[ityp*L_ATMTYPE], pSPARC->psd[ityp].pspxc);
         }
+    }    
+
+    if (strcmpi(pSPARC->XC,"HSE") == 0) {
+        // pSPARC->hyb_range_fock = 0.106;     // QE's value
+        // pSPARC->hyb_range_pbe = 0.106;      // QE's value
+        // pSPARC->hyb_range_fock = 0.106066017177982;     // ABINIT's value
+        // pSPARC->hyb_range_pbe = 0.188988157484231;      // ABINIT's value
+        if (!rank) {
+            printf("Careful: You are using HSE with range-separation parameter omega_HF = %.6f and omega_PBE = %.6f\n", pSPARC->hyb_range_fock, pSPARC->hyb_range_pbe);
+            printf("If you want to change it, please use EXX_RANGE_FOCK and EXX_RANGE_PBE input options.\n");
+        }
+    } else {
+        pSPARC->hyb_range_fock = -1;
+        pSPARC->hyb_range_pbe = -1;
     }
     
     strncpy(pSPARC->filename , pSPARC_Input->filename,sizeof(pSPARC->filename));
@@ -952,6 +1260,20 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     }
     pSPARC->NLCC_flag = NLCC_flag;
 
+    // check if exchange-correlation functional is metaGGA
+    pSPARC->mGGAflag = 0;
+    if (strcmpi(pSPARC->XC, "SCAN") == 0) { // it can be expand, such as adding r2SCAN 
+        pSPARC->mGGAflag = 1;
+    }
+    // check if exchange-correlation functional is vdW-DF1 or vdW-DF2
+    pSPARC->vdWDFFlag = 0;
+    if (strcmpi(pSPARC->XC,"vdWDF1") == 0) {
+        pSPARC->vdWDFFlag = 1;
+    }
+    if (strcmpi(pSPARC->XC,"vdWDF2") == 0) {
+        pSPARC->vdWDFFlag = 2;
+    }
+
     // initialize energy values
     pSPARC->Esc = 0.0;
     pSPARC->Efermi = 0.0;
@@ -963,12 +1285,19 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     // estimate Nstates if not provided
     if (pSPARC->Nstates == -1) {
         // estimate Nstates using the linear function y = 1.2 * x + 5
-        pSPARC->Nstates = (int) ((pSPARC->Nelectron / 2) * 1.2) + 5;
+        pSPARC->Nstates = (int) ((pSPARC->Nelectron / 2) * 1.2 + 5) * pSPARC->Nspinor;
     }
 
-    if (pSPARC->Nstates < (pSPARC->Nelectron / 2)) {
-        if (!rank) printf("\nError: number of states is less than Nelectron/2!\n");
-        exit(EXIT_FAILURE);
+    if (pSPARC->Nspinor == 1) {
+        if (pSPARC->Nstates < (pSPARC->Nelectron / 2) && !pSPARC->SQFlag) {
+            if (!rank) printf("\nERROR: number of states is less than Nelectron/2!\n");
+            exit(EXIT_FAILURE);
+        }
+    } else if (pSPARC->Nspinor == 2) {
+        if (pSPARC->Nstates < pSPARC->Nelectron && !pSPARC->SQFlag) {
+            if (!rank) printf("\nERROR: number of states is less than Nelectron!\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     // filenames
@@ -994,7 +1323,7 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
         i = 0;
         while ( (access( temp_outfname, F_OK ) != -1) && i <= MAX_OUTPUT ) {
             i++;
-            snprintf(temp_outfname, L_STRING, "%s_%d", pSPARC->OutFilename, i);
+            snprintf(temp_outfname, L_STRING, "%s_%02d", pSPARC->OutFilename, i);
         }
         pSPARC->suffixNum = i; // note that this is only known to rank 0!
 
@@ -1018,19 +1347,19 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
         } else if (i > 0) {
             char tempchar[L_STRING];
             snprintf(tempchar, L_STRING, "%s", pSPARC->OutFilename);
-            snprintf(pSPARC->OutFilename,   L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->OutFilename,   L_STRING, "%s_%02d", tempchar, i);
             snprintf(tempchar, L_STRING, "%s", pSPARC->StaticFilename);
-            snprintf(pSPARC->StaticFilename, L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->StaticFilename, L_STRING, "%s_%02d", tempchar, i);
             snprintf(tempchar, L_STRING, "%s", pSPARC->AtomFilename);
-            snprintf(pSPARC->AtomFilename,  L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->AtomFilename,  L_STRING, "%s_%02d", tempchar, i);
             snprintf(tempchar, L_STRING, "%s", pSPARC->DensFilename);
-            snprintf(pSPARC->DensFilename,  L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->DensFilename,  L_STRING, "%s_%02d", tempchar, i);
             snprintf(tempchar, L_STRING, "%s", pSPARC->EigenFilename);
-            snprintf(pSPARC->EigenFilename, L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->EigenFilename, L_STRING, "%s_%02d", tempchar, i);
             snprintf(tempchar, L_STRING, "%s", pSPARC->MDFilename);
-            snprintf(pSPARC->MDFilename,    L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->MDFilename,    L_STRING, "%s_%02d", tempchar, i);
             snprintf(tempchar, L_STRING, "%s", pSPARC->RelaxFilename);
-            snprintf(pSPARC->RelaxFilename, L_STRING, "%s_%d", tempchar, i);
+            snprintf(pSPARC->RelaxFilename, L_STRING, "%s_%02d", tempchar, i);
         }
     }
     // Initialize MD/relax variables
@@ -1201,7 +1530,7 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
             x = *(pSPARC->atom_pos+3*i);
             if (x < pSPARC->xin || x > pSPARC->range_x + pSPARC->xin)
             {
-                printf("\nError: position of atom # %d is out of the domain!\n",i+1);
+                printf("\nERROR: position of atom # %d is out of the domain!\n",i+1);
                 exit(EXIT_FAILURE);
             }
         }
@@ -1224,7 +1553,7 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
             y = *(pSPARC->atom_pos+1+3*i);
             if (y < 0 || y > pSPARC->range_y)
             {
-                printf("\nError: position of atom # %d is out of the domain!\n",i+1);
+                printf("\nERROR: position of atom # %d is out of the domain!\n",i+1);
                 exit(EXIT_FAILURE);
             }
         }
@@ -1247,7 +1576,7 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
             z = *(pSPARC->atom_pos+2+3*i);
             if (z < 0 || z > pSPARC->range_z)
             {
-                printf("\nError: position of atom # %d is out of the domain!\n",i+1);
+                printf("\nERROR: position of atom # %d is out of the domain!\n",i+1);
                 exit(EXIT_FAILURE);
             }
         }
@@ -1432,9 +1761,21 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     }
 #endif
 
-    // set default simple mixing parameter to be the same as for pulay mixing
+    // set default simple (linear) mixing parameter to be the same as for pulay mixing
     if (pSPARC->MixingParameterSimple < 0.0) {
         pSPARC->MixingParameterSimple = pSPARC->MixingParameter;
+    }
+
+    // set default mixing parameter for magnetization density to the same as mixing
+    // parameter for total density/potential
+    if (pSPARC->MixingParameterMag < 0.0) {
+        pSPARC->MixingParameterMag = pSPARC->MixingParameter;
+    }
+
+    // set default simple (linear) mixing parameter for magnetization density to be the
+    // same as for pulay mixing
+    if (pSPARC->MixingParameterSimpleMag < 0.0) {
+        pSPARC->MixingParameterSimpleMag = pSPARC->MixingParameterMag;
     }
 
     if (pSPARC->MixingVariable < 0) { // mixing variable not provided
@@ -1443,6 +1784,10 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
 
     if (pSPARC->MixingPrecond < 0) { // mixing preconditioner not provided
         pSPARC->MixingPrecond = 1;  // set default to 'Kerker' preconditioner
+    }
+
+    if (pSPARC->MixingPrecondMag < 0) { // mixing preconditioner for magnetization not provided
+        pSPARC->MixingPrecondMag = 0;  // set default to 'none'
     }
 
     // set up real space preconditioner coefficients
@@ -1783,11 +2128,245 @@ void SPARC_copy_input(SPARC_OBJ *pSPARC, SPARC_INPUT_OBJ *pSPARC_Input) {
     pSPARC->isGammaPoint = (int)(pSPARC->Nkpts_sym == 1 
         && fabs(pSPARC->k1[0]) < TEMP_TOL 
         && fabs(pSPARC->k2[0]) < TEMP_TOL 
-        && fabs(pSPARC->k3[0]) < TEMP_TOL);
+        && fabs(pSPARC->k3[0]) < TEMP_TOL
+        && pSPARC->SOC_Flag == 0);
 
-    // estimate memory usage
-    double memory_usage = estimate_memory(pSPARC);
-    pSPARC->memory_usage = memory_usage;
+    if (pSPARC->vdWDFFlag != 0){
+        if ((pSPARC->BCx)||(pSPARC->BCy)||(pSPARC->BCz)) {
+            if (rank == 0)
+                printf(RED "ERROR: vdW-DF does not support Dirichlet boundary condition!\n" RESET);
+            exit(EXIT_FAILURE); 
+        }
+        if (pSPARC->spin_typ != 0) {
+            if (rank == 0)
+                printf(RED "ERROR: currently vdW-DF does not support spin polarization!\n" RESET);
+            exit(EXIT_FAILURE); 
+        }
+    }
+
+    #if !defined(USE_MKL) && !defined(USE_FFTW)
+    if (pSPARC->vdWDFFlag != 0){
+        if (rank == 0)
+            printf(RED "ERROR: To use vdW-DF, please turn on MKL or FFTW in makefile!\n"
+            "Or you can stop using vdW-DF by setting other exchange-correlation functionals.\n" RESET);
+        exit(EXIT_FAILURE); 
+    }
+    if (pSPARC->usefock == 1){
+        if (rank == 0)
+            printf(RED "ERROR: To use hybrid functionals like PBE0 or HF, please turn on MKL or FFTW in makefile!\n" RESET);
+        exit(EXIT_FAILURE); 
+    }
+    #endif // #if !defined(USE_MKL) && !defined(USE_FFTW)
+
+    if (pSPARC->mGGAflag == 1) {
+        // if (pSPARC->spin_typ != 0) {
+        //     if (rank == 0) 
+        //         printf(RED "ERROR: currently SCAN does not support spin polarization!\n" RESET);
+        //     exit(EXIT_FAILURE); 
+        // }
+        if (pSPARC->SOC_Flag || pSPARC->usefock || pSPARC->SQFlag) {
+            if (!rank) 
+                printf(RED "ERROR: Spin-orbit coupling, hybrid and SQ are not supported in this version of SCAN implementation.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+#if !defined(USE_MKL) && !defined(USE_SCALAPACK)
+    if (pSPARC->usefock == 1 && pSPARC->ACEFlag == 1){
+        if (rank == 0)
+            printf(RED "ERROR: To use hybrid functional with ACE method, please turn on MKL or SCALAPACK in makefile!\n"RESET);
+        exit(EXIT_FAILURE);
+    }
+#endif // #if defined(USE_MKL) || defined(USE_SCALAPACK)
+
+    if (pSPARC->usefock == 1) {
+        if (pSPARC->SOC_Flag || pSPARC->SQFlag) {
+            if (!rank) 
+                printf(RED "ERROR: Spin-orbit coupling and SQ are not supported in this version of hybrid implementation.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (pSPARC->EXXDiv_Flag < 0) {
+            if (pSPARC->BC > 2) {
+                #ifdef DEBUG
+                if (!rank) 
+                    printf(RED "For Wire and Slab with hybrid funcitonal, deafults to use auxiliary functioin method.\n" RESET);  
+                #endif
+                pSPARC->EXXDiv_Flag = 1;
+            } else {
+                if (strcmpi(pSPARC->XC,"HSE") == 0) {
+                    #ifdef DEBUG
+                    if (!rank) 
+                        printf(RED "For Bulk and Cluster with HSE hybrid funcitonal, deafults to use ERFC method.\n" RESET);  
+                    #endif
+                    pSPARC->EXXDiv_Flag = 2;
+                } else {
+                    #ifdef DEBUG
+                    if (!rank) 
+                        printf(RED "For Bulk and Cluster with hybrid funcitonal, deafults to use spherical truncation method.\n" RESET);  
+                    #endif
+                    pSPARC->EXXDiv_Flag = 0;
+                }
+            }
+        } else {
+            if (strcmpi(pSPARC->XC,"HSE") != 0 && pSPARC->EXXDiv_Flag == 2) {
+                printf(RED "ERROR: ERFC method could only be used with HSE functional.\n" RESET);
+                exit(EXIT_FAILURE);
+            }
+        }
+        
+        if (pSPARC->TOL_FOCK < 0.0) {
+            // TODO: This model is based on the results of 4 tests. Do more tests to improve the robustness. 
+            // default FOCK outer loop tolerance based on accuracy_level
+            // we use a model curve to correlate fock tolerance and energy and force accuracy
+            //     log10(y) = a * log10(x) + b' + c * log10(Nelectron/n_atom)
+            // (1) if y is energy accuracy (Ha/atom), a = 0.9636, b' = 0.5000, c = -2.5426
+            // (2) if y is force accuracy  (Ha/Bohr), a = 1.1626, b' = 1.7719, c = -2.5000
+            // if fock tol is not set, we'll use accuracy_level to find fock tol
+
+            const double log10_neatom = log10(pSPARC->Nelectron / (double) pSPARC->n_atom);
+            double target_force_accuracy = -1.0;
+            double target_energy_accuracy = -1.0;
+
+            // accuracy_levels      : 0 - minimal | 1 - low  | 2 - medium | 3 - high | 4 - extreme
+            // target force accuracy: 0 - 1e-1    | 1 - 1e-2 | 2 - 1e-3   | 3 - 1e-4 | 4 - 1e-5
+            if (pSPARC->accuracy_level >= 0) {
+                target_force_accuracy = pow(10.0, -(pSPARC->accuracy_level + 1.0));
+            } else if (pSPARC->target_force_accuracy > 0.0) {
+                target_force_accuracy = pSPARC->target_force_accuracy;
+            } else if (pSPARC->target_energy_accuracy > 0.0) {
+                target_energy_accuracy = pSPARC->target_energy_accuracy;
+            }
+
+            // if none of the accuracy levels are specified, set force_accuracy to 1e-3
+            if (target_force_accuracy < 0  && target_energy_accuracy < 0) {
+                target_force_accuracy = 1e-3;
+            }
+
+            // calculate FOCK TOL based on specified target accuracy
+            if (target_force_accuracy > 0.0) { // find fock tol based on target force accuracy
+                const double a = 1.1626;
+                const double b = 1.7719 - 2.5000 * log10_neatom;
+                double log10_target = log10(target_force_accuracy);
+                pSPARC->TOL_FOCK = pow(10.0, (log10_target - b)/a);
+            } else if (target_energy_accuracy > 0.0) { // find fock tol based on target energy accuracy
+                const double a = 0.9636;
+                const double b = 0.5000 - 2.5426 * log10_neatom;
+                double log10_target = log10(target_energy_accuracy);
+                pSPARC->TOL_FOCK = pow(10.0, (log10_target - b)/a);
+            }
+        }
+    
+        // If initial PBE SCF tolerance is not defined, use default 10*pSPARC->TOL_FOCK
+        if (pSPARC->TOL_SCF_INIT < 0.0) {
+            pSPARC->TOL_SCF_INIT = max(10*pSPARC->TOL_FOCK,1e-3);
+        }
+        pSPARC->MAXIT_FOCK = max(1,pSPARC->MAXIT_FOCK);
+        pSPARC->MINIT_FOCK = max(1,pSPARC->MINIT_FOCK);
+        
+        if (pSPARC->EXXMem_batch < 0) {
+            // use default EXXMem_batch if it's negative
+            pSPARC->EXXMem_batch = 0;
+        }
+
+        // If using ACE operator, only do domain parallelization
+        if (pSPARC->ACEFlag == 1) {
+            if (pSPARC->EXXACEVal_state < 0) {
+                // Use default EXXACEVal_state if it's negative
+                pSPARC->EXXACEVal_state = 3;
+            }
+        } else {
+            pSPARC->EXXACEVal_state = 0;
+        }
+    } else {
+        pSPARC->ACEFlag = 0;
+        pSPARC->EXXMem_batch = 0;
+        pSPARC->EXXACEVal_state = 0;
+    }
+
+    // constraints on SOC 
+    if (pSPARC->SOC_Flag == 1) {
+        if (pSPARC->usefock || pSPARC->mGGAflag || pSPARC->SQFlag) {
+            if (rank == 0) 
+                printf(RED "ERROR: Hybrid functional, SCAN and SQ are not supported in this version of spin-orbit coupling implementation.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (pSPARC->spin_typ == 1) {
+            if (rank == 0) 
+                printf(RED "ERROR: Spin-polarized calculation is not supported in this version of spin-orbit coupling implementation.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // constraints on SQ
+    if (pSPARC->SQFlag == 1) {
+        if (pSPARC->BCx || pSPARC->BCy || pSPARC->BCz) {
+            if (!rank) 
+                printf(RED "ERROR: SQ method only supports periodic boundary conditions.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (pSPARC->cell_typ != 0) {
+            if (!rank) 
+                printf(RED "ERROR: SQ method only supports orthogonal systems in this version.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (pSPARC->isGammaPoint != 1 || pSPARC->spin_typ == 1) {
+            if (rank == 0)
+                printf(RED "ERROR: Polarized calculation and Kpoint options are not supported in this version of SQ implementation.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (pSPARC_Input->Nstates != -1) {
+            if (rank == 0)
+                printf(RED "ERROR: NSTATES is not vaild in SQ method.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        // Only Gauss Quadrature has been implemented.
+        // TODO: Add Clenshaw Curtis method and SQ_typ input option. 
+        pSPARC->SQ_typ = 2;
+        if (pSPARC->SOC_Flag || pSPARC->usefock || pSPARC->mGGAflag) {
+            if (!rank) 
+                printf(RED "ERROR: Hybrid functional, spin-orbit coupling, and SCAN are not supported in this version of SQ implementation." RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (pSPARC->SQ_rcut < 0) {
+            if (!rank)
+                printf(RED "ERROR: SQ_RCUT must be provided when SQ method is turned on.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        // if (pSPARC->SQ_typ == 1) {
+            // npl_c is set to nearest factor of 4 to facilitate Cleanshaw Curtis for Energy
+            // pSPARC->SQ_npl_c = (int) ceil(pSPARC->SQ_fac_g2c * pSPARC->SQ_npl_g / 4.0) * 4;
+        // }
+        if (pSPARC->SQ_typ == 2) {
+            if (pSPARC->SQ_npl_g <= 0) {
+                if (!rank)
+                    printf(RED "ERROR: SQ_NPL_G must be provided a positive integer when Gauss Quadrature method is turned on in SQ method.\n" RESET);
+                exit(EXIT_FAILURE);
+            }
+
+            if (pSPARC->SQ_npl_c <= 0) {
+                if (pSPARC->SQ_fac_g2c <= 0) {
+                    if (!rank)
+                        printf(RED "ERROR: SQ_FAC_G2C must be positive when Gauss Quadrature method is turned on \n"
+                                "and npl_c is not provided correctly in SQ method.\n" RESET);
+                    exit(EXIT_FAILURE);
+                }
+                // If npl_c is not provided, then npl_c = fac_g2c * npl_g. 
+                pSPARC->SQ_npl_c = (int) ceil(pSPARC->SQ_fac_g2c * pSPARC->SQ_npl_g);
+            } else {
+                // if npl_c is provided correctly, then SQ_FAC_G2C is set to negative and not printed 
+                pSPARC->SQ_fac_g2c = -1;
+            }
+        }
+        if (pSPARC->PrintEigenFlag > 0) {
+            if (!rank)
+                printf(RED "ERROR: PRINT_EIGEN is not valid in SQ method.\n" RESET);
+                exit(EXIT_FAILURE);
+        }
+        pSPARC->SQ_correction = 0;          // The correction term in energy and forces hasn't been implemented in this version.
+        if (pSPARC->SQ_typ_dm == 1) {
+            pSPARC->SQ_gauss_mem = 0;       // Ensure the high memory option is only valid for Gauss Qaudrature
+        }
+    }
 }
 
 
@@ -1799,7 +2378,51 @@ double estimate_memory(const SPARC_OBJ *pSPARC) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
 
-    int Nd = pSPARC->Nd;
+    if (pSPARC->SQFlag == 1) {
+        SQ_OBJ *pSQ = pSPARC->pSQ;
+        // TODO: add accurate memory estimation
+        double mem_PR, mem_Rcut, mem_phi, mem_chi;
+        mem_PR = (double) sizeof(double) * pSQ->Nd_PR;
+        mem_Rcut = 0;
+        mem_phi = (double) sizeof(double) * pSPARC->Nd_d * (6+pSPARC->SQ_npl_g*2+pSPARC->SQ_npl_c+1);
+        mem_chi = (double) sizeof(double) * pSPARC->Nd_d * pSQ->Nd_loc * 0.3; 
+        if (pSPARC->SQ_typ_dm == 2) { 
+            if (pSPARC->SQ_gauss_mem == 1) {                    // save vectors for all FD nodes
+                mem_Rcut += (double) sizeof(double) * pSPARC->Nd_d * pSQ->Nd_loc * pSPARC->SQ_npl_g;
+                mem_phi += (double) sizeof(double) * pSPARC->Nd_d * pSPARC->SQ_npl_g * pSPARC->SQ_npl_g;
+            } else {
+                mem_Rcut += (double) sizeof(double) * pSQ->Nd_loc * pSPARC->SQ_npl_g;
+            }
+        } else if (pSPARC->SQ_typ_dm == 1) {
+            mem_Rcut += (double) sizeof(double) * pSPARC->Nd_d * pSQ->Nd_loc;
+        }
+
+        double memory_usage = 0.0;
+        memory_usage = mem_PR + mem_Rcut + mem_phi + mem_chi;
+
+        #ifdef DEBUG
+        if (rank == 0) {
+            char mem_str[32];
+            printf("----------------------\n");
+            printf("Estimated memory usage\n");
+            formatBytes(memory_usage, 32, mem_str);
+            printf("Total: %s\n", mem_str);
+            formatBytes(mem_PR, 32, mem_str);
+            printf("Vectors in P.R. domain : %s\n", mem_str);
+            formatBytes(mem_Rcut, 32, mem_str);
+            printf("Vectors in Rcut domain : %s\n", mem_str);
+            formatBytes(mem_phi, 32, mem_str);
+            printf("Vectors in phi domain : %s\n", mem_str);
+            formatBytes(mem_chi, 32, mem_str);
+            printf("All saved nonlocal projectors: %s\n", mem_str);
+            printf("----------------------------------------------\n");
+            formatBytes(memory_usage/nproc,32,mem_str);
+            printf("Estimated memory usage per processor: %s\n",mem_str);
+        }
+        #endif
+        return memory_usage;
+    }
+    int Nd = pSPARC->Nd * pSPARC->Nspinor;
     int Ns = pSPARC->Nstates;
     int Nspin = pSPARC->Nspin;
     int Nkpts_sym = pSPARC->Nkpts_sym;
@@ -1823,6 +2446,28 @@ double estimate_memory(const SPARC_OBJ *pSPARC) {
     // total memory
     double memory_usage = memory_orbitals + memory_vectors;
 
+    // memory for Exact Exchange part
+    double memory_exx = 0.0;
+    if (pSPARC->usefock > 0) {
+        if (pSPARC->ACEFlag == 0) {
+            // psi outer
+            memory_exx += (double) Nd * Ns * pSPARC->Nkpts_hf_red * Nspin * pSPARC->npkpt * type_size;
+            // ace operator
+            memory_exx += (double) Nd * Ns * Nkpts_sym * Nspin * (pSPARC->npband + 2) * type_size;
+        } else {
+            // psi outer in dmcomm
+            memory_exx += (double) Nd * Ns * pSPARC->Nkpts_hf_red * Nspin * pSPARC->npkpt * pSPARC->npband * type_size;
+            // psi outer in kptcomm_topo
+            memory_exx += (double) Nd * Ns * pSPARC->Nkpts_hf_red * Nspin * pSPARC->npkpt * type_size;
+        }
+        if (pSPARC->EXXMem_batch == 0) {
+            memory_exx += (double) Nd * Ns * Ns * pSPARC->Nkpts_hf * Nkpts_sym * (2*type_size + 2*sizeof(int));
+        } else {
+            memory_exx += (double) pSPARC->EXXMem_batch * (2*type_size + 2*sizeof(int));
+        }
+        memory_usage += memory_exx;
+    }
+
     #ifdef DEBUG
     if (rank == 0) {
         char mem_str[32];
@@ -1834,6 +2479,10 @@ double estimate_memory(const SPARC_OBJ *pSPARC) {
         printf("orbitals             : %s\n", mem_str);
         formatBytes(memory_vectors, 32, mem_str);
         printf("global sized vectors : %s\n", mem_str);
+        if (pSPARC->usefock > 0) {
+            formatBytes(memory_exx, 32, mem_str);
+            printf("global exact exchange memory : %s\n", mem_str);
+        }
         printf("----------------------------------------------\n");
         formatBytes(memory_usage/nproc,32,mem_str);
         printf("Estimated memory usage per processor: %s\n",mem_str);
@@ -1925,7 +2574,6 @@ double kpointWeight(double kx,double ky,double kz) {
 }
 
 
-
 /**
  * @brief   Calculate k-points and the associated weights.
  */
@@ -1934,18 +2582,69 @@ void Calculate_kpoints(SPARC_OBJ *pSPARC) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     // Initialize the weights of k points
     // by going over all the k points from the Monkhorst Pack grid
-    int k,nk1,nk2,nk3;
+    int k,nk1,nk2,nk3,k_hf,k_hf_rd;
     double k1,k2,k3;
     double Lx = pSPARC->range_x;
     double Ly = pSPARC->range_y;
     double Lz = pSPARC->range_z;
-    k=0;
+    k = k_hf = k_hf_rd = 0;
+    
+    if (pSPARC->usefock == 1) {
+        // constrains on EXX_DOWNSAMPLING
+        if (pSPARC->EXXDownsampling[0] < 0 || pSPARC->EXXDownsampling[1] < 0 || pSPARC->EXXDownsampling[2] < 0) {
+            if (rank == 0)
+                printf(RED "ERROR: EXX_DOWNSAMPLING must be non-negative.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+
+        if ((pSPARC->EXXDownsampling[0] > 0 && pSPARC->Kx % pSPARC->EXXDownsampling[0]) ||
+            (pSPARC->EXXDownsampling[1] > 0 && pSPARC->Ky % pSPARC->EXXDownsampling[1]) ||
+            (pSPARC->EXXDownsampling[2] > 0 && pSPARC->Kz % pSPARC->EXXDownsampling[2])) {
+            if (rank == 0)
+                printf(RED "ERROR: Number of kpoints must be divisible by EXX_DOWNSAMPLING in all directions if EXX_DOWNSAMPLING is positive.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+
+        if (pSPARC->EXXDownsampling[0] == 0) {
+            pSPARC->Nkpts_hf = 1;
+            pSPARC->Kx_hf = 1;
+        } else {
+            pSPARC->Kx_hf = pSPARC->Kx / pSPARC->EXXDownsampling[0];
+            pSPARC->Nkpts_hf = pSPARC->Kx / pSPARC->EXXDownsampling[0];
+        }
+
+        if (pSPARC->EXXDownsampling[1] == 0) {
+            pSPARC->Nkpts_hf *= 1;
+            pSPARC->Ky_hf = 1;
+        } else {
+            pSPARC->Ky_hf = pSPARC->Ky / pSPARC->EXXDownsampling[1];
+            pSPARC->Nkpts_hf *= (pSPARC->Ky / pSPARC->EXXDownsampling[1]);
+        }
+
+        if (pSPARC->EXXDownsampling[2] == 0) {
+            pSPARC->Nkpts_hf *= 1;
+            pSPARC->Kz_hf = 1;
+        } else {
+            pSPARC->Kz_hf = pSPARC->Kz / pSPARC->EXXDownsampling[2];
+            pSPARC->Nkpts_hf *= (pSPARC->Kz / pSPARC->EXXDownsampling[2]);
+        }
+        pSPARC->k1_hf = (double *) calloc(sizeof(double), pSPARC->Nkpts_hf);
+        pSPARC->k2_hf = (double *) calloc(sizeof(double), pSPARC->Nkpts_hf);
+        pSPARC->k3_hf = (double *) calloc(sizeof(double), pSPARC->Nkpts_hf);
+        pSPARC->kpthf_ind = (int *) calloc(sizeof(int), pSPARC->Nkpts_hf);
+        pSPARC->kpthf_ind_red = (int *) calloc(sizeof(int), pSPARC->Nkpts_hf);
+        pSPARC->kpthf_pn  = (int *) calloc(sizeof(int), pSPARC->Nkpts_hf);
+        pSPARC->kptWts_hf = 1.0 / pSPARC->Nkpts_hf;
+    }
 
     double sumx = 2.0 * M_PI / Lx;
     double sumy = 2.0 * M_PI / Ly;
     double sumz = 2.0 * M_PI / Lz;
 
     int nk, flag;
+    int flag_0x, flag_0y, flag_0z;                      // flag for finding 0 k-point in 3 directions when exx_downsampling is 0
+    int flag_cx, flag_cy, flag_cz;                      // flag for correct slot in x,y,z direction
+    flag_0x = flag_0y = flag_0z = 0;
 
     // calculate M-P grid similar to that in ABINIT
     int nk1_s = -floor((pSPARC->Kx - 1)/2);
@@ -1992,11 +2691,113 @@ void Calculate_kpoints(SPARC_OBJ *pSPARC) {
                 } else {
                     pSPARC->kptWts[nk] = 2.0;
                 }
+
+                if (pSPARC->usefock == 1) {
+                    if (pSPARC->EXXDownsampling[0] == 0) {
+                        flag_cx = (fabs(k1) < TEMP_TOL);
+                        if (flag_cx) flag_0x = 1;
+                    } else {
+                        flag_cx = !((nk1 - nk1_s + 1) % pSPARC->EXXDownsampling[0]);
+                    }
+
+                    if (pSPARC->EXXDownsampling[1] == 0) {
+                        flag_cy = (fabs(k2) < TEMP_TOL);
+                        if (flag_cy) flag_0y = 1;
+                    } else {
+                        flag_cy = !((nk2 - nk2_s + 1) % pSPARC->EXXDownsampling[1]);
+                    }
+
+                    if (pSPARC->EXXDownsampling[2] == 0) {
+                        flag_cz = (fabs(k3) < TEMP_TOL);
+                        if (flag_cz) flag_0z = 1;
+                    } else {
+                        flag_cz = !((nk3 - nk3_s + 1) % pSPARC->EXXDownsampling[2]);
+                    }
+
+                    if (flag_cx && flag_cy && flag_cz) {
+                        pSPARC->k1_hf[k_hf] = k1;
+                        pSPARC->k2_hf[k_hf] = k2;
+                        pSPARC->k3_hf[k_hf] = k3;
+                        k_hf ++;
+                    }
+                }
             }
         }
     }
 
     pSPARC->Nkpts_sym = k; // update number of k points after symmetry reduction
+
+    if (pSPARC->usefock == 1) {
+        if (!pSPARC->EXXDownsampling[0] && !flag_0x) {
+            if (rank == 0)
+                printf(RED "ERROR: Gamma point is not one of the k-vectors. Please use positive EXX_DOWNSAMPLING or change k-point grid in the first direction.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (!pSPARC->EXXDownsampling[1] && !flag_0y) {
+            if (rank == 0)
+                printf(RED "ERROR: Gamma point is not one of the k-vectors. Please use positive EXX_DOWNSAMPLING or change k-point grid in the second direction.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+        if (!pSPARC->EXXDownsampling[2] && !flag_0z) {
+            if (rank == 0)
+                printf(RED "ERROR: Gamma point is not one of the k-vectors. Please use positive EXX_DOWNSAMPLING or change k-point grid in the third direction.\n" RESET);
+            exit(EXIT_FAILURE);
+        }
+
+        for (k_hf = 0; k_hf < pSPARC->Nkpts_hf; k_hf ++) {
+            for (k = 0; k < pSPARC->Nkpts_sym; k ++) {
+                if (   (fabs(pSPARC->k1[k] - pSPARC->k1_hf[k_hf]) < TEMP_TOL) 
+                    && (fabs(pSPARC->k2[k] - pSPARC->k2_hf[k_hf]) < TEMP_TOL) 
+                    && (fabs(pSPARC->k3[k] - pSPARC->k3_hf[k_hf]) < TEMP_TOL) ) {
+                    pSPARC->kpthf_ind[k_hf] = k;        // index w.r.t. Nkpts_sym
+                    pSPARC->kpthf_pn[k_hf] = 1;         // 1 -> k, 0 -> -k
+                    break;
+                }
+            }
+            if (pSPARC->kpthf_pn[k_hf] == 1) continue;
+            for (k = 0; k < pSPARC->Nkpts_sym; k ++) {
+                if (   ((fabs(pSPARC->k1[k] + pSPARC->k1_hf[k_hf]) < TEMP_TOL) || (fabs(pSPARC->k1[k] + pSPARC->k1_hf[k_hf] - sumx) < TEMP_TOL) )
+                    && ((fabs(pSPARC->k2[k] + pSPARC->k2_hf[k_hf]) < TEMP_TOL) || (fabs(pSPARC->k2[k] + pSPARC->k2_hf[k_hf] - sumy) < TEMP_TOL) )
+                    && ((fabs(pSPARC->k3[k] + pSPARC->k3_hf[k_hf]) < TEMP_TOL) || (fabs(pSPARC->k3[k] + pSPARC->k3_hf[k_hf] - sumz) < TEMP_TOL) )) {
+                    pSPARC->kpthf_ind[k_hf] = k;        // index w.r.t. Nkpts_sym
+                    pSPARC->kpthf_pn[k_hf] = 0;         // 1 -> k, 0 -> -k
+                }
+            }
+        }
+
+        // find list of k-points after reduce for HF
+        pSPARC->Nkpts_hf_red = 1;
+        pSPARC->kpts_hf_red_list = (int *) calloc(sizeof(int), pSPARC->Nkpts_sym);
+        pSPARC->kpts_hf_red_list[0] = pSPARC->kpthf_ind[0];
+        for (k_hf = 1; k_hf < pSPARC->Nkpts_hf; k_hf ++) {
+            flag = 0;
+            for (k = 0; k < k_hf; k ++) {
+                if (pSPARC->kpthf_ind[k] == pSPARC->kpthf_ind[k_hf]) {
+                    flag = 1;
+                    break;
+                }
+            }
+            if (flag) continue;
+            pSPARC->kpts_hf_red_list[pSPARC->Nkpts_hf_red++] = pSPARC->kpthf_ind[k_hf];
+        }
+
+        pSPARC->kpthfred2kpthf = (int (*)[3]) calloc(sizeof(int[3]), pSPARC->Nkpts_hf_red);
+        for (k = 0; k < pSPARC->Nkpts_hf_red; k++) pSPARC->kpthfred2kpthf[k][0] = 0;
+        // update the reduced index to be w.r.t. Nkpts_hf_red
+        // find inverse mapping from Nkpts_hf_red to Nkpts_hf
+        for (k_hf = 0; k_hf < pSPARC->Nkpts_hf; k_hf ++) {
+            for (k = 0; k < pSPARC->Nkpts_hf_red; k++) {
+                if (pSPARC->kpthf_ind[k_hf] == pSPARC->kpts_hf_red_list[k]) {
+                    pSPARC->kpthf_ind_red[k_hf] = k;        // index w.r.t. Nkpts_hf_red
+                    pSPARC->kpthfred2kpthf[k][0] ++;
+                    int indx = pSPARC->kpthfred2kpthf[k][0];
+                    pSPARC->kpthfred2kpthf[k][indx] = k_hf;
+                    break;
+                }
+            }
+        }
+    }
+
 #ifdef DEBUG
     if (!rank) printf("After symmetry reduction, Nkpts_sym = %d\n", pSPARC->Nkpts_sym);
     for (nk = 0; nk < pSPARC->Nkpts_sym; nk++) {
@@ -2006,8 +2807,25 @@ void Calculate_kpoints(SPARC_OBJ *pSPARC) {
         if (!rank) printf("k1[%2d]: %8.4f, k2[%2d]: %8.4f, k3[%2d]: %8.4f, kptwt[%2d]: %.3f \n",
             nk,pSPARC->k1[nk]/tpiblx,nk,pSPARC->k2[nk]/tpibly,nk,pSPARC->k3[nk]/tpiblz,nk,pSPARC->kptWts[nk]);
     }
+
+    if (pSPARC->usefock == 1) {
+        if (!rank) printf("K-points for Hartree-Fock operator after downsampling, Nkpts_hf %d\n", pSPARC->Nkpts_hf);
+        for (nk = 0; nk < pSPARC->Nkpts_hf; nk++) {
+            double tpiblx = 2 * M_PI / Lx;
+            double tpibly = 2 * M_PI / Ly;
+            double tpiblz = 2 * M_PI / Lz;
+            if (!rank) printf("k1_hf[%2d]: %8.4f, k2_hf[%2d]: %8.4f, k3_hf[%2d]: %8.4f, kptwt[%2d]: %.3f, kpthf_ind[%2d]: %2d, kpthf_ind_red[%2d]: %2d, kpthf_pn[%2d]: %2d \n",
+                nk,pSPARC->k1_hf[nk]/tpiblx,nk,pSPARC->k2_hf[nk]/tpibly,nk,pSPARC->k3_hf[nk]/tpiblz,
+                nk,pSPARC->kptWts_hf,nk,pSPARC->kpthf_ind[nk],nk,pSPARC->kpthf_ind_red[nk],nk,pSPARC->kpthf_pn[nk]);
+        }
+        if (!rank) printf("K-points for Hartree-Fock operator after downsampling mapping into kpts_system, Nkpts_hf_red %d\n", pSPARC->Nkpts_hf_red);
+        for (nk = 0; nk < pSPARC->Nkpts_hf_red; nk++) {
+            if (!rank) printf("kpts_hf_red_list[%d]: %d\n", nk, pSPARC->kpts_hf_red_list[nk]);
+        }
+    }
 #endif
 }
+
 
 
 void Calculate_local_kpoints(SPARC_OBJ *pSPARC) {
@@ -2069,6 +2887,28 @@ void Calculate_SplineDerivRadFun(SPARC_OBJ *pSPARC) {
                 lcount++; lcount2++;
             }
         }
+        if (pSPARC->psd[ityp].pspsoc) {
+            ppl_sum = 0;
+            for (l = 1; l <= pSPARC->psd[ityp].lmax; l++) {
+                //if (l == pSPARC->localPsd[ityp]) continue; // this fails under -O3, -O2 optimization
+                if (l == lloc) continue;
+                ppl_sum += pSPARC->psd[ityp].ppl_soc[l-1];
+            }
+            pSPARC->psd[ityp].SplineFitUdV_soc = (double *)malloc(sizeof(double)*psd_len * ppl_sum);
+            assert(pSPARC->psd[ityp].SplineFitUdV_soc != NULL);
+            lcount = lcount2 = 0;
+            for (l = 1; l <= pSPARC->psd[ityp].lmax; l++) {
+                if (l == lloc) {
+                    lcount2 += pSPARC->psd[ityp].ppl_soc[l-1];
+                    continue;
+                }
+                for (np = 0; np < pSPARC->psd[ityp].ppl_soc[l-1]; np++) {
+                    // note that UdV is of size (psd_len, lmax+1), while SplineFitUdV has size (psd_len, lmax)
+                    getYD_gen(pSPARC->psd[ityp].RadialGrid, pSPARC->psd[ityp].UdV_soc+lcount2*psd_len, pSPARC->psd[ityp].SplineFitUdV_soc+lcount*psd_len, psd_len);
+                    lcount++; lcount2++;
+                }
+            }
+        }
     }
 }
 
@@ -2107,7 +2947,7 @@ void Cart2nonCart_transformMat(SPARC_OBJ *pSPARC) {
 
     if(pSPARC->Jacbdet <= 0){
         if(rank == 0)
-            printf("Error: Volume(det(jacobian)) %lf is <= 0\n", pSPARC->Jacbdet);
+            printf("ERROR: Volume(det(jacobian)) %lf is <= 0\n", pSPARC->Jacbdet);
         exit(EXIT_FAILURE);
     }
 
@@ -2264,14 +3104,18 @@ void write_output_init(SPARC_OBJ *pSPARC) {
     }
 
     fprintf(output_fp,"***************************************************************************\n");
-    fprintf(output_fp,"*                       SPARC (version Apr 05, 2021)                      *\n");  
+    fprintf(output_fp,"*                       SPARC (version Jul 15, 2022)                      *\n");
     fprintf(output_fp,"*   Copyright (c) 2020 Material Physics & Mechanics Group, Georgia Tech   *\n");
     fprintf(output_fp,"*           Distributed under GNU General Public License 3 (GPL)          *\n");
     fprintf(output_fp,"*                   Start time: %s                  *\n",c_time_str);
     fprintf(output_fp,"***************************************************************************\n");
     fprintf(output_fp,"                           Input parameters                                \n");
     fprintf(output_fp,"***************************************************************************\n");
-    fprintf(output_fp,"CELL: %.15g %.15g %.15g \n",pSPARC->range_x,pSPARC->range_y,pSPARC->range_z);
+    if (pSPARC->Flag_latvec_scale == 0) {
+        fprintf(output_fp,"CELL: %.15g %.15g %.15g \n",pSPARC->range_x,pSPARC->range_y,pSPARC->range_z);
+    } else {
+        fprintf(output_fp,"LATVEC_SCALE: %.15g %.15g %.15g \n",pSPARC->latvec_scale_x,pSPARC->latvec_scale_y,pSPARC->latvec_scale_z);
+    }
     fprintf(output_fp,"LATVEC:\n");
     fprintf(output_fp,"%.15g %.15g %.15g \n",pSPARC->LatVec[0],pSPARC->LatVec[1],pSPARC->LatVec[2]);
     fprintf(output_fp,"%.15g %.15g %.15g \n",pSPARC->LatVec[3],pSPARC->LatVec[4],pSPARC->LatVec[5]);
@@ -2283,7 +3127,7 @@ void write_output_init(SPARC_OBJ *pSPARC) {
     fprintf(output_fp," %s", pSPARC->BCy == 0 ? "P" : "D");
     fprintf(output_fp," %s", pSPARC->BCz == 0 ? "P" : "D");
     fprintf(output_fp,"\n");
-    if (pSPARC->BC>1) {
+    if (pSPARC->BC>1 && !pSPARC->SQFlag) {
         fprintf(output_fp,"KPOINT_GRID: %d %d %d\n",pSPARC->Kx,pSPARC->Ky,pSPARC->Kz);
         fprintf(output_fp,"KPOINT_SHIFT: %.15g %.15g %.15g\n",pSPARC->kptshift[0],pSPARC->kptshift[1],pSPARC->kptshift[2]);
     }
@@ -2298,16 +3142,47 @@ void write_output_init(SPARC_OBJ *pSPARC) {
     } else {
         fprintf(output_fp,"SMEARING: %.10g\n",1./pSPARC->Beta);
     }
-    fprintf(output_fp,"CHEB_DEGREE: %d\n",pSPARC->ChebDegree);
-    fprintf(output_fp,"NSTATES: %d\n",pSPARC->Nstates);
-
-    // this should depend on temperature and preconditoner used
-    if (pSPARC->Nstates < (int)(1.2*(pSPARC->Nelectron/2))+5 ) { // with kerker a factor of 1.1 might be needed
-        fprintf(output_fp,"#WARNING: Number of bands may be insufficient for efficient SCF convergence.\n");
-    }
-
     fprintf(output_fp,"EXCHANGE_CORRELATION: %s\n",pSPARC->XC);
-
+    if (strcmpi(pSPARC->XC, "HSE") == 0) {
+        fprintf(output_fp,"EXX_RANGE_FOCK: %.6f\n", pSPARC->hyb_range_fock);
+        fprintf(output_fp,"EXX_RANGE_PBE: %.6f\n", pSPARC->hyb_range_pbe);
+    }
+    if (pSPARC->SQFlag == 1) {
+        fprintf(output_fp,"SQ_FLAG: %d\n", pSPARC->SQFlag);
+        if (pSPARC->SQ_typ == 2)
+            fprintf(output_fp,"SQ_TYPE: GAUSS\n");
+        if (pSPARC->SQ_typ_dm == 1) {
+            fprintf(output_fp,"SQ_TYPE_DM: CC\n");
+            fprintf(output_fp,"SQ_NPL_C: %d\n", pSPARC->SQ_npl_c);
+        } else if (pSPARC->SQ_typ_dm == 2) {
+            fprintf(output_fp,"SQ_TYPE_DM: GAUSS\n");
+            if (pSPARC->SQ_gauss_mem == 1) {
+                fprintf(output_fp,"SQ_GAUSS_MEM: HIGH\n");
+            } else {
+                fprintf(output_fp,"SQ_GAUSS_MEM: LOW\n");
+            }
+        }    
+        fprintf(output_fp,"SQ_NPL_G: %d\n", pSPARC->SQ_npl_g);
+        fprintf(output_fp,"SQ_RCUT: %.10g\n", pSPARC->SQ_rcut);
+        if (pSPARC->SQ_fac_g2c > 0)
+            fprintf(output_fp,"SQ_FAC_G2C: %.10g\n", pSPARC->SQ_fac_g2c);
+        fprintf(output_fp,"SQ_EIGSHIFT_FLAG: %d\n", pSPARC->SQ_EigshiftFlag);
+        if (pSPARC->SQ_EigshiftFlag == 1)
+            fprintf(output_fp,"SQ_EIGSHIFT: %.10g\n", pSPARC->SQ_eigshift);
+        fprintf(output_fp,"SQ_TOL_OCC: %.2E\n", pSPARC->SQ_tol_occ);    
+    } else {
+        fprintf(output_fp,"NSTATES: %d\n",pSPARC->Nstates);
+        // this should depend on temperature and preconditoner used
+        if (pSPARC->Nstates < (int)(1.2*(pSPARC->Nelectron/2)+5)*pSPARC->Nspinor ) { // with kerker a factor of 1.1 might be needed
+            printf("#WARNING: Number of bands may be insufficient for efficient SCF convergence.\n");
+        }
+        fprintf(output_fp,"CHEB_DEGREE: %d\n",pSPARC->ChebDegree);
+        if (pSPARC->CheFSI_Optmz == 1) {
+            fprintf(output_fp,"CHEFSI_OPTMZ: %d\n",pSPARC->CheFSI_Optmz);
+        }
+        fprintf(output_fp,"CHEFSI_BOUND_FLAG: %d\n",pSPARC->chefsibound_flag);
+    }
+    
     if (pSPARC->RelaxFlag >= 1) {
         fprintf(output_fp,"RELAX_FLAG: %d\n",pSPARC->RelaxFlag);
     }
@@ -2345,19 +3220,40 @@ void write_output_init(SPARC_OBJ *pSPARC) {
         fprintf(output_fp,"ION_VEL_DSTR: %d\n",pSPARC->ion_vel_dstr);
         fprintf(output_fp,"ION_VEL_DSTR_RAND: %d\n",pSPARC->ion_vel_dstr_rand);
         fprintf(output_fp,"ION_TEMP: %.15g\n",pSPARC->ion_T);
-        if(strcmpi(pSPARC->MDMeth,"NVT_NH") == 0)
+        if(strcmpi(pSPARC->MDMeth,"NVT_NH") == 0) {
             fprintf(output_fp,"ION_TEMP_END: %.15g\n",pSPARC->thermos_Tf);
             fprintf(output_fp,"QMASS: %.15g\n",pSPARC->qmass);
+        }
+        if(strcmpi(pSPARC->MDMeth,"NPT_NH") == 0) {
+            //fprintf(output_fp,"AMOUNT_THERMO_VARIABLE: %d\n",pSPARC->NPT_NHnnos);
+            fprintf(output_fp,"NPT_SCALE_VECS:");
+            if (pSPARC->NPTscaleVecs[0] == 1) fprintf(output_fp," 1");
+            if (pSPARC->NPTscaleVecs[1] == 1) fprintf(output_fp," 2");
+            if (pSPARC->NPTscaleVecs[2] == 1) fprintf(output_fp," 3");
+            fprintf(output_fp,"\n");
+            fprintf(output_fp,"NPT_NH_QMASS:");
+            fprintf(output_fp," %d",pSPARC->NPT_NHnnos);
+            for (i = 0; i < pSPARC->NPT_NHnnos; i++){
+                if (i%5 == 0){
+                    fprintf(output_fp,"\n");
+                }
+                fprintf(output_fp," %.15g",pSPARC->NPT_NHqmass[i]);
+            }
+            fprintf(output_fp,"\n");
+            fprintf(output_fp,"NPT_NH_BMASS: %.15g\n",pSPARC->NPT_NHbmass);
+            fprintf(output_fp,"TARGET_PRESSURE: %.15g GPa\n",pSPARC->prtarget);
+        }
+        if(strcmpi(pSPARC->MDMeth,"NPT_NP") == 0) {
+            //fprintf(output_fp,"AMOUNT_THERMO_VARIABLE: %d\n",pSPARC->NPT_NHnnos);
+            fprintf(output_fp,"NPT_NP_QMASS: %.15g\n",pSPARC->NPT_NP_qmass);
+            fprintf(output_fp,"NPT_NP_BMASS: %.15g\n",pSPARC->NPT_NP_bmass);
+            fprintf(output_fp,"TARGET_PRESSURE: %.15g GPa\n",pSPARC->prtarget);
+        }
     }
 
     if (pSPARC->RestartFlag == 1) {
         fprintf(output_fp,"RESTART_FLAG: %d\n",pSPARC->RestartFlag);
     }
-    if (pSPARC->CheFSI_Optmz == 1) {
-        fprintf(output_fp,"CHEFSI_OPTMZ: %d\n",pSPARC->CheFSI_Optmz);
-    }
-
-    fprintf(output_fp,"CHEFSI_BOUND_FLAG: %d\n",pSPARC->chefsibound_flag);
     if (pSPARC->NetCharge != 0) {
         fprintf(output_fp,"NET_CHARGE: %d\n",pSPARC->NetCharge);
     }
@@ -2398,6 +3294,18 @@ void write_output_init(SPARC_OBJ *pSPARC) {
     } else if (pSPARC->MixingPrecond == 3) {
         fprintf(output_fp,"MIXING_PRECOND: truncated_kerker\n");
     }
+    
+    if (pSPARC->Nspin > 1) {
+        if (pSPARC->MixingPrecondMag == 0) {
+            fprintf(output_fp,"MIXING_PRECOND_MAG: none\n");
+        } else if (pSPARC->MixingPrecondMag == 1) {
+            fprintf(output_fp,"MIXING_PRECOND_MAG: kerker\n");
+        } else if (pSPARC->MixingPrecondMag == 2) {
+            fprintf(output_fp,"MIXING_PRECOND_MAG: resta\n");
+        } else if (pSPARC->MixingPrecondMag == 3) {
+            fprintf(output_fp,"MIXING_PRECOND_MAG: truncated_kerker\n");
+        }
+    }
 
     // for large periodic systems, give warning if preconditioner is not chosen
     if (pSPARC->BC == 2) {
@@ -2431,9 +3339,22 @@ void write_output_init(SPARC_OBJ *pSPARC) {
         fprintf(output_fp,"PRECOND_FITPOW: %d\n",pSPARC->precond_fitpow);
     }
 
+    if (pSPARC->Nspin > 1) {
+        if (pSPARC->MixingPrecondMag == 1) {
+            fprintf(output_fp,"PRECOND_KERKER_KTF_MAG: %.10G\n",pSPARC->precond_kerker_kTF_mag);
+            fprintf(output_fp,"PRECOND_KERKER_THRESH_MAG: %.10G\n",pSPARC->precond_kerker_thresh_mag);
+        }
+    }
+
     fprintf(output_fp,"MIXING_PARAMETER: %.10G\n",pSPARC->MixingParameter);
     if (pSPARC->PulayFrequency > 1) {
         fprintf(output_fp,"MIXING_PARAMETER_SIMPLE: %.10G\n",pSPARC->MixingParameterSimple);
+    }
+    if (pSPARC->Nspin > 1) {
+        fprintf(output_fp,"MIXING_PARAMETER_MAG: %.10G\n",pSPARC->MixingParameterMag);
+        if (pSPARC->PulayFrequency > 1) {
+            fprintf(output_fp,"MIXING_PARAMETER_SIMPLE_MAG: %.10G\n",pSPARC->MixingParameterSimpleMag);
+        }
     }
     fprintf(output_fp,"MIXING_HISTORY: %d\n",pSPARC->MixingHistory);
     fprintf(output_fp,"PULAY_FREQUENCY: %d\n",pSPARC->PulayFrequency);
@@ -2468,25 +3389,69 @@ void write_output_init(SPARC_OBJ *pSPARC) {
         fprintf(output_fp,"RELAX_MAXDILAT: %.2E\n",pSPARC->max_dilatation); 
         fprintf(output_fp,"PRINT_RELAXOUT: %d\n",pSPARC->PrintRelaxout);
     }
+    if (pSPARC->usefock == 1){
+        fprintf(output_fp,"TOL_FOCK: %.2E\n",pSPARC->TOL_FOCK);
+        fprintf(output_fp,"TOL_SCF_INIT: %.2E\n",pSPARC->TOL_SCF_INIT);
+        fprintf(output_fp,"MAXIT_FOCK: %d\n",pSPARC->MAXIT_FOCK);
+        fprintf(output_fp,"MINIT_FOCK: %d\n",pSPARC->MINIT_FOCK);
+        if (pSPARC->EXXMeth_Flag == 0)
+            fprintf(output_fp,"EXX_METHOD: FOURIER_SPACE\n");
+        else
+            fprintf(output_fp,"EXX_METHOD: REAL_SPACE\n");
+        if (pSPARC->EXXDiv_Flag == 0)
+            fprintf(output_fp,"EXX_DIVERGENCE: SPHERICAL\n");
+        else if (pSPARC->EXXDiv_Flag == 1)
+            fprintf(output_fp,"EXX_DIVERGENCE: AUXILIARY\n");
+        else if (pSPARC->EXXDiv_Flag == 2)
+            fprintf(output_fp,"EXX_DIVERGENCE: ERFC\n");
+        fprintf(output_fp,"EXX_MEM: %d\n", pSPARC->EXXMem_batch);
+        fprintf(output_fp,"ACE_FLAG: %d\n",pSPARC->ACEFlag);
+        if (pSPARC->ACEFlag == 1) {
+            fprintf(output_fp,"EXX_ACE_VALENCE_STATES: %d\n", pSPARC->EXXACEVal_state);
+        }
+        fprintf(output_fp,"EXX_DOWNSAMPLING: %d %d %d\n",pSPARC->EXXDownsampling[0]
+                            ,pSPARC->EXXDownsampling[1],pSPARC->EXXDownsampling[2]);
+    }
+    if (pSPARC->d3Flag == 1) {
+        fprintf(output_fp,"D3_FLAG: %d\n",pSPARC->d3Flag);
+        fprintf(output_fp,"D3_RTHR: %.15G\n",pSPARC->d3Rthr);   
+        fprintf(output_fp,"D3_CN_THR: %.15G\n",pSPARC->d3Cn_thr);
+    }
+    if (pSPARC->vdWDFFlag != 0) {
+        fprintf(output_fp,"VDWDF_GEN_KERNEL: %d\n",pSPARC->vdWDFKernelGenFlag);
+    }
     fprintf(output_fp,"OUTPUT_FILE: %s\n",pSPARC->filename_out);
+    fprintf(output_fp,"***************************************************************************\n");
+    fprintf(output_fp,"                                Cell                                       \n");
+    fprintf(output_fp,"***************************************************************************\n");
+    fprintf(output_fp,"Lattice vectors (Bohr):\n");
+    fprintf(output_fp,"%.15f %.15f %.15f \n",pSPARC->LatUVec[0]*pSPARC->range_x,pSPARC->LatUVec[1]*pSPARC->range_x,pSPARC->LatUVec[2]*pSPARC->range_x);
+    fprintf(output_fp,"%.15f %.15f %.15f \n",pSPARC->LatUVec[3]*pSPARC->range_y,pSPARC->LatUVec[4]*pSPARC->range_y,pSPARC->LatUVec[5]*pSPARC->range_y);
+    fprintf(output_fp,"%.15f %.15f %.15f \n",pSPARC->LatUVec[6]*pSPARC->range_z,pSPARC->LatUVec[7]*pSPARC->range_z,pSPARC->LatUVec[8]*pSPARC->range_z);
+    fprintf(output_fp,"Volume: %-.10E (Bohr^3)\n", pSPARC->range_x * pSPARC->range_y * pSPARC->range_z * pSPARC->Jacbdet);
     fprintf(output_fp,"***************************************************************************\n");
     fprintf(output_fp,"                           Parallelization                                 \n");
     fprintf(output_fp,"***************************************************************************\n");
-    if (pSPARC->num_node || pSPARC->num_cpu_per_node || pSPARC->num_acc_per_node) {
-        fprintf(output_fp,"# Command line arguments: ");
-        if (pSPARC->num_node) fprintf(output_fp,"-n %d ", pSPARC->num_node);
-        if (pSPARC->num_cpu_per_node) fprintf(output_fp,"-c %d ", pSPARC->num_cpu_per_node);
-        if (pSPARC->num_acc_per_node) fprintf(output_fp,"-a %d ", pSPARC->num_acc_per_node);
-        fprintf(output_fp,"\n");
-    }
-    fprintf(output_fp,"NP_SPIN_PARAL: %d\n",pSPARC->npspin);
-    fprintf(output_fp,"NP_KPOINT_PARAL: %d\n",pSPARC->npkpt);
-    fprintf(output_fp,"NP_BAND_PARAL: %d\n",pSPARC->npband);
-    fprintf(output_fp,"NP_DOMAIN_PARAL: %d %d %d\n",pSPARC->npNdx,pSPARC->npNdy,pSPARC->npNdz);
-    fprintf(output_fp,"NP_DOMAIN_PHI_PARAL: %d %d %d\n",pSPARC->npNdx_phi,pSPARC->npNdy_phi,pSPARC->npNdz_phi);
-    fprintf(output_fp,"EIG_SERIAL_MAXNS: %d\n",pSPARC->eig_serial_maxns);
-    if (pSPARC->useLAPACK == 0) {
-        fprintf(output_fp,"EIG_PARAL_BLKSZ: %d\n",pSPARC->eig_paral_blksz);
+    if (pSPARC->SQFlag == 1) {
+        fprintf(output_fp,"NP_DOMAIN_SQ_PARAL: %d %d %d\n",pSPARC->npNdx_SQ,pSPARC->npNdy_SQ,pSPARC->npNdz_SQ);
+        fprintf(output_fp,"NP_DOMAIN_PHI_PARAL: %d %d %d\n",pSPARC->npNdx_phi,pSPARC->npNdy_phi,pSPARC->npNdz_phi);
+    } else {
+        if (pSPARC->num_node || pSPARC->num_cpu_per_node || pSPARC->num_acc_per_node) {
+            fprintf(output_fp,"# Command line arguments: ");
+            if (pSPARC->num_node) fprintf(output_fp,"-n %d ", pSPARC->num_node);
+            if (pSPARC->num_cpu_per_node) fprintf(output_fp,"-c %d ", pSPARC->num_cpu_per_node);
+            if (pSPARC->num_acc_per_node) fprintf(output_fp,"-a %d ", pSPARC->num_acc_per_node);
+            fprintf(output_fp,"\n");
+        }
+        fprintf(output_fp,"NP_SPIN_PARAL: %d\n",pSPARC->npspin);
+        fprintf(output_fp,"NP_KPOINT_PARAL: %d\n",pSPARC->npkpt);
+        fprintf(output_fp,"NP_BAND_PARAL: %d\n",pSPARC->npband);
+        fprintf(output_fp,"NP_DOMAIN_PARAL: %d %d %d\n",pSPARC->npNdx,pSPARC->npNdy,pSPARC->npNdz);
+        fprintf(output_fp,"NP_DOMAIN_PHI_PARAL: %d %d %d\n",pSPARC->npNdx_phi,pSPARC->npNdy_phi,pSPARC->npNdz_phi);
+        fprintf(output_fp,"EIG_SERIAL_MAXNS: %d\n",pSPARC->eig_serial_maxns);
+        if (pSPARC->useLAPACK == 0) {
+            fprintf(output_fp,"EIG_PARAL_BLKSZ: %d\n",pSPARC->eig_paral_blksz);
+        }
     }
     fprintf(output_fp,"***************************************************************************\n");
     fprintf(output_fp,"                             Initialization                                \n");
@@ -2592,7 +3557,7 @@ void write_output_init(SPARC_OBJ *pSPARC) {
 
 /**
  * @brief Create MPI struct type SPARC_INPUT_MPI for broadcasting.
- */
+*/
 void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     SPARC_INPUT_OBJ sparc_input_tmp;
 
@@ -2610,7 +3575,12 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
                                          MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT,
                                          MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT,
                                          MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT,
-                                         MPI_INT, MPI_INT, MPI_INT,
+                                         MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT,
+                                         MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, 
+                                         MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, 
+                                         MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, 
+                                         MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT,
+                                         MPI_INT, 
                                          MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
                                          MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
                                          MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
@@ -2618,7 +3588,11 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
                                          MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
                                          MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
                                          MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
-                                         MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
+                                         MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
+                                         MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, 
+                                         MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, 
+                                         MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, 
+                                         MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, 
                                          MPI_CHAR, MPI_CHAR, MPI_CHAR, MPI_CHAR, MPI_CHAR,
                                          MPI_CHAR};
     int blens[N_MEMBR] = {1, 1, 1, 1, 1,
@@ -2635,15 +3609,24 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
                           1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1,
-                          1, 1, 1,       /* int */ 
-                          1, 1, 1, 9, 1,
-                          1, 3, 1, 1, 1,
+                          1, 1, 1, 1, 1,
+                          1, 1, 3, 1, 1, 
+                          1, 1, 1, 1, 1, 
+                          3, 1, 1, 1, 1, 
+                          1, 1, 1, 1, 1, 
+                          1, /* int */ 
+                          1, 1, 1, 1, 1, 
+                          1, 9, 1, 1, 3,
                           1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1,
-                          1, 1, 1,         /* double */
+                          1, 1, 1, 1, 1, 
+                          1, 1, 1, 1, 1,
+                          1, 1, L_QMASS, 1, 1,
+                          1, 1, 1, 1, 1, 
+                          1, 1, 1, 1, 1, /* double */
                           32, 32, 32, L_STRING, L_STRING, /* char */
                           L_STRING};
 
@@ -2670,6 +3653,7 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     MPI_Get_address(&sparc_input_tmp.spin_typ, addr + i++);
     MPI_Get_address(&sparc_input_tmp.RelaxFlag, addr + i++);
     MPI_Get_address(&sparc_input_tmp.RestartFlag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.Flag_latvec_scale, addr + i++);
     MPI_Get_address(&sparc_input_tmp.numIntervals_x, addr + i++);
     MPI_Get_address(&sparc_input_tmp.numIntervals_y, addr + i++);
     MPI_Get_address(&sparc_input_tmp.numIntervals_z, addr + i++);
@@ -2694,6 +3678,7 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     MPI_Get_address(&sparc_input_tmp.Relax_Niter, addr + i++);
     MPI_Get_address(&sparc_input_tmp.MixingVariable, addr + i++);
     MPI_Get_address(&sparc_input_tmp.MixingPrecond, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.MixingPrecondMag, addr + i++);
     MPI_Get_address(&sparc_input_tmp.MixingHistory, addr + i++);
     MPI_Get_address(&sparc_input_tmp.PulayFrequency, addr + i++);
     MPI_Get_address(&sparc_input_tmp.PulayRestartFlag, addr + i++);
@@ -2725,10 +3710,34 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     MPI_Get_address(&sparc_input_tmp.Calc_stress, addr + i++);
     MPI_Get_address(&sparc_input_tmp.Calc_pres, addr + i++);
     MPI_Get_address(&sparc_input_tmp.Poisson_solver, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.d3Flag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.NPT_NHnnos, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.NPTscaleVecs, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.vdWDFKernelGenFlag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.MAXIT_FOCK, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.EXXMeth_Flag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.ACEFlag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.EXXMem_batch, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.EXXACEVal_state, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.EXXDiv_Flag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.EXXDownsampling, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.MINIT_FOCK, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQFlag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_typ_dm, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_gauss_mem, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_npl_c, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_npl_g, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_EigshiftFlag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.npNdx_SQ, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.npNdy_SQ, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.npNdz_SQ, addr + i++);
     // double type
     MPI_Get_address(&sparc_input_tmp.range_x, addr + i++);
     MPI_Get_address(&sparc_input_tmp.range_y, addr + i++);
     MPI_Get_address(&sparc_input_tmp.range_z, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.latvec_scale_x, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.latvec_scale_y, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.latvec_scale_z, addr + i++);
     MPI_Get_address(&sparc_input_tmp.LatVec, addr + i++);
     MPI_Get_address(&sparc_input_tmp.mesh_spacing, addr + i++);
     MPI_Get_address(&sparc_input_tmp.ecut, addr + i++);
@@ -2743,6 +3752,8 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     MPI_Get_address(&sparc_input_tmp.TOL_PRECOND, addr + i++);
     MPI_Get_address(&sparc_input_tmp.precond_kerker_kTF, addr + i++);
     MPI_Get_address(&sparc_input_tmp.precond_kerker_thresh, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.precond_kerker_kTF_mag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.precond_kerker_thresh_mag, addr + i++);
     MPI_Get_address(&sparc_input_tmp.precond_resta_q0, addr + i++);
     MPI_Get_address(&sparc_input_tmp.precond_resta_Rs, addr + i++);
     MPI_Get_address(&sparc_input_tmp.REFERENCE_CUTOFF, addr + i++);
@@ -2750,6 +3761,8 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     MPI_Get_address(&sparc_input_tmp.elec_T, addr + i++);
     MPI_Get_address(&sparc_input_tmp.MixingParameter, addr + i++);
     MPI_Get_address(&sparc_input_tmp.MixingParameterSimple, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.MixingParameterMag, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.MixingParameterSimpleMag, addr + i++);
     MPI_Get_address(&sparc_input_tmp.MD_dt, addr + i++);
     MPI_Get_address(&sparc_input_tmp.ion_T, addr + i++);
     MPI_Get_address(&sparc_input_tmp.thermos_Tf, addr + i++);
@@ -2764,6 +3777,21 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     MPI_Get_address(&sparc_input_tmp.FIRE_maxmov, addr + i++);
     MPI_Get_address(&sparc_input_tmp.max_dilatation, addr + i++);
     MPI_Get_address(&sparc_input_tmp.TOL_RELAX_CELL, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.d3Rthr, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.d3Cn_thr, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.NPT_NHqmass, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.NPT_NHbmass, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.prtarget, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.NPT_NP_qmass, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.NPT_NP_bmass, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.TOL_FOCK, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.TOL_SCF_INIT, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.hyb_range_fock, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.hyb_range_pbe, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_rcut, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_fac_g2c, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_tol_occ, addr + i++);
+    MPI_Get_address(&sparc_input_tmp.SQ_eigshift, addr + i++);
     // char type
     MPI_Get_address(&sparc_input_tmp.MDMeth, addr + i++);
     MPI_Get_address(&sparc_input_tmp.RelaxMeth, addr + i++);
@@ -2784,4 +3812,45 @@ void SPARC_Input_MPI_create(MPI_Datatype *pSPARC_INPUT_MPI) {
     //MPI_Type_create_struct(N_MEMBR, blens, disps, SPARC_types, &SPARC_INPUT_MPI_tmp);
     //MPI_Type_create_resized(SPARC_INPUT_MPI_tmp, 0, extend, pSPARC_INPUT_MPI);
     //MPI_Type_commit(pSPARC_INPUT_MPI);
+}
+
+
+/**
+ * @brief   Computing nearest neighbohr distance
+ */
+double compute_nearest_neighbor_dist(SPARC_OBJ *pSPARC, char CorN) {
+#ifdef DEBUG
+    double t1, t2;
+    t1 = MPI_Wtime();
+#endif
+    int atm1, atm2;
+    double nn, dist;
+    nn = 100000000000;
+    if (CorN == 'N') {           // Non-Cartesian coordinates
+        for (atm1 = 0; atm1 < pSPARC->n_atom-1; atm1++) {
+            for (atm2 = atm1+1; atm2 < pSPARC->n_atom; atm2++) {
+                CalculateDistance(pSPARC, pSPARC->atom_pos[3*atm1], pSPARC->atom_pos[3*atm1+1], pSPARC->atom_pos[3*atm1+2],
+                                    pSPARC->atom_pos[3*atm2], pSPARC->atom_pos[3*atm2+1], pSPARC->atom_pos[3*atm2+2], &dist);
+                if (dist < nn) nn = dist;
+            }
+        }
+    } else if (CorN == 'C') {                            // Cartesian coordinates
+        for (atm1 = 0; atm1 < pSPARC->n_atom-1; atm1++) {
+            for (atm2 = atm1+1; atm2 < pSPARC->n_atom; atm2++) {
+                dist = fabs(sqrt(pow(pSPARC->atom_pos[3*atm1] - pSPARC->atom_pos[3*atm2],2.0) 
+                               + pow(pSPARC->atom_pos[3*atm1+1] - pSPARC->atom_pos[3*atm2+1],2.0) 
+                               + pow(pSPARC->atom_pos[3*atm1+2] - pSPARC->atom_pos[3*atm2+2],2.0) ));
+                if (dist < nn) nn = dist;
+            }
+        }
+    } else {
+        printf("ERROR: please use 'N' for non-cartesian coordinates and 'C' for cartesian coordinates in compute_nearest_neighbor_dist function.");
+        exit(-1);
+    }
+    
+#ifdef DEBUG
+    t2 = MPI_Wtime();
+    printf("\nComputing nearest neighbor distance (%.3f Bohr) takes %.3f ms\n", nn, (t2-t1)*1000);
+#endif
+    return nn;
 }

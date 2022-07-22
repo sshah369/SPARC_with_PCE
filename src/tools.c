@@ -15,6 +15,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <float.h>
+#include <assert.h>
 
 #include "tools.h"
 #include "parallelization.h"
@@ -793,6 +795,18 @@ void VectorShift(double *Vec, const int len, const double c, MPI_Comm comm)
 
 
 /**
+ * @brief   Scale a vector, x = x * c.
+ */
+void VectorScale(double *Vec, const int len, const double c, MPI_Comm comm)
+{
+    if (comm == MPI_COMM_NULL) return;
+    for (int k = 0; k < len; k++)
+        Vec[k] *= c;
+}
+
+
+
+/**
  * @brief   Create a random matrix with each entry a random number within given range. 
  * 
  *          Note that each process within comm will have different random entries.
@@ -1479,6 +1493,392 @@ void RealSphericalHarmonic(const int len, double *x, double *y,double *z, double
 }
 
 
+/**
+ * @brief   Calculate Complex spherical harmonics for given positions and given l and m. 
+ *
+ *          Only for l = 0, 1, ..., 6.
+ */
+void ComplexSphericalHarmonic(const int len, double *x, double *y,double *z, double *r, const int l, const int m, double complex *Ylm)
+{
+    // only l=0,1,2,3,4,5,6 implemented for now
+
+    //double pi=M_PI;
+    double p;                   	  
+    int i; 
+    
+    /* l = 0 */
+    double C00 = 0.282094791773878;
+    /* l = 1 */
+    double C11 = 0.345494149471335;
+    double C10 = 0.488602511902920;
+    /* l = 2 */
+    double C22 = 0.386274202023190;
+    double C21 = 0.772548404046379;
+    double C20 = 0.315391565252520;
+    /* l = 3 */
+    double C33 = 0.417223823632784;
+    double C32 = 1.021985476433282;
+    double C31 = 0.323180184114151;
+    double C30 = 0.373176332590115;
+    /* l = 4 */
+    double C44 = 0.442532692444983;
+    double C43 = 1.251671470898352;
+    double C42 = 0.334523271778645;
+    double C41 = 0.473087347878780;
+    double C40 = 0.105785546915204;
+    /* l = 5 */
+    double C55 = 0.464132203440858;
+    double C54 = 1.467714898305751; 
+    double C53 = 0.345943719146840;
+    double C52 = 1.694771183260899;
+    double C51 = 0.320281648576215;
+    double C50 = 0.116950322453424;
+    /* l = 6 */
+    double C66 = 0.483084113580066; 
+    double C65 = 1.673452458100098;
+    double C64 = 0.356781262853998; 
+    double C63 = 0.651390485867716; 
+    double C62 = 0.325695242933858; 
+    double C61 = 0.411975516301141;
+    double C60 = 0.063569202267628;
+    
+    switch (l)
+    {
+        /* l = 0 */
+        case 0:
+            for (i = 0; i < len; i++) Ylm[i] = C00;
+            break;
+        
+        /* l = 1 */
+        case 1: 
+            switch (m) 
+            {
+                case -1: /* m = -1 */
+                    for (i = 0; i < len; i++) 
+                        Ylm[i] = C11 * ((x[i]-I*y[i])/r[i]);
+                    break;
+                
+                case 0: /* m = 0 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C10 * (z[i] / r[i]);
+                    break;
+                
+                case 1: /* m = 1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = -C11 * ((x[i]+I*y[i])/r[i]);
+                    break;
+                
+                /* incorrect m */
+                default: printf("<m> must be an integer between %d and %d!\n", -l, l); break;
+            }
+            break;
+        
+        /* l = 2 */
+        case 2: 
+            switch (m) 
+            {      
+                case -2: /* m = -2 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C22 * ((x[i]-I*y[i])*(x[i]-I*y[i]))/(r[i]*r[i]);
+                    break;
+
+                case -1: /* m = -1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C21 * ((x[i]-I*y[i])*z[i])/(r[i]*r[i]);
+                    break;
+
+                case 0: /* m = 0 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C20 * (2*z[i]*z[i] - x[i]*x[i] - y[i]*y[i])/(r[i]*r[i]);
+                    break;
+                
+                case 1: /* m = 1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = -C21 * ((x[i]+I*y[i])*z[i])/(r[i]*r[i]);
+                    break;
+                
+                case 2: /* m = 2 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C22 * ((x[i]+I*y[i])*(x[i]+I*y[i]))/(r[i]*r[i]);
+                    break;
+                
+                /* incorrect m */
+                default: printf("<m> must be an integer between %d and %d!\n", -l, l); 
+                         break;
+            }
+            break;
+
+        /* l = 3 */
+        case 3: 
+            switch (m) 
+            {   
+                case -3: /* m = -3 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C33 * ((x[i]-I*y[i])*(x[i]-I*y[i])*(x[i]-I*y[i]))/(r[i]*r[i]*r[i]);
+                    break;
+               
+                case -2: /* m = -2 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C32 * ((x[i]-I*y[i])*((x[i]-I*y[i]))*z[i])/(r[i]*r[i]*r[i]);
+                    break;
+
+                case -1: /* m = -1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C31 * (x[i]-I*y[i])*(4*z[i]*z[i] - x[i]*x[i] - y[i]*y[i])/(r[i]*r[i]*r[i]);
+                    break;
+
+                case 0: /* m = 0 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C30 * z[i]*(2*z[i]*z[i] - 3*x[i]*x[i] - 3*y[i]*y[i])/(r[i]*r[i]*r[i]);
+                    break;
+                
+                case 1: /* m = 1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = -C31 * (x[i]+I*y[i])*(4*z[i]*z[i] - x[i]*x[i] - y[i]*y[i])/(r[i]*r[i]*r[i]);
+                    break;
+                
+                case 2: /* m = 2 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C32 * (((x[i]+I*y[i])*(x[i]+I*y[i]))*z[i])/(r[i]*r[i]*r[i]);
+                    break;
+                
+                case 3: /* m = 3 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = -C33 * ((x[i]+I*y[i])*(x[i]+I*y[i])*(x[i]+I*y[i]))/(r[i]*r[i]*r[i]);
+                    break;
+                
+                /* incorrect m */
+                default: printf("<m> must be an integer between %d and %d!\n", -l, l); 
+                         break;
+            }
+            break;
+        
+        /* l = 4 */
+        case 4: 
+            switch (m) 
+            {     
+                case -4: /* m = -4 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C44 * ((x[i]-I*y[i])*(x[i]-I*y[i])*(x[i]-I*y[i])*(x[i]-I*y[i]))/pow(r[i],4);
+                    break;
+                
+                case -3: /* m = -3 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C43 * (((x[i]-I*y[i])*(x[i]-I*y[i])*(x[i]-I*y[i]))*z[i])/pow(r[i],4);
+                    break;
+               
+                case -2: /* m = -2 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C42 * (((x[i]-I*y[i])*(x[i]-I*y[i]))*(7*z[i]*z[i] - r[i]*r[i]))/pow(r[i],4);
+                    break;
+
+                case -1: /* m = -1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C41 * ((x[i]-I*y[i])*z[i]*(7*z[i]*z[i] - 3*r[i]*r[i]))/pow(r[i],4);
+                    break;
+
+                case 0: /* m = 0 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C40 * (35*z[i]*z[i]*z[i]*z[i] - 30*(z[i]*z[i])*(r[i]*r[i]) + 3*r[i]*r[i]*r[i]*r[i])/pow(r[i],4);
+                    break;
+                
+                case 1: /* m = 1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = -C41 * ((x[i]+I*y[i])*z[i]*(7*z[i]*z[i] - 3*r[i]*r[i]))/pow(r[i],4);
+                    break;
+                
+                case 2: /* m = 2 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C42 * (((x[i]+I*y[i])*(x[i]+I*y[i]))*(7*z[i]*z[i] - r[i]*r[i]))/pow(r[i],4);
+                    break;
+                
+                case 3: /* m = 3 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = -C43 * (((x[i]+I*y[i])*(x[i]+I*y[i])*(x[i]+I*y[i]))*z[i])/pow(r[i],4);
+                    break;
+                
+                case 4: /* m = 4 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C44 * ((x[i]+I*y[i])*(x[i]+I*y[i])*(x[i]+I*y[i])*(x[i]+I*y[i]))/pow(r[i],4);
+                    break;
+                    
+                /* incorrect m */
+                default: printf("<m> must be an integer between %d and %d!\n", -l, l); 
+                         break;
+            }
+            break;
+      
+        /* l = 5 */
+        case 5: 
+            switch (m) 
+            {   
+                case -5: /* m = -5 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C55 * (cpow(x[i]-I*y[i],5))/pow(r[i],5);
+                    }
+                    break;
+                
+                case -4: /* m = -4 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C54 * (cpow(x[i]-I*y[i],4)*z[i])/pow(r[i],5);
+                    }
+                    break;
+                
+                case -3: /* m = -3 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C53 * (((x[i]-I*y[i])*(x[i]-I*y[i])*(x[i]-I*y[i]))*(9*z[i]*z[i] - r[i]*r[i]))/pow(r[i],5);
+                    }
+                    break;
+               
+                case -2: /* m = -2 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C52 * (((x[i]-I*y[i])*(x[i]-I*y[i]))*(3*z[i]*z[i]*z[i] - z[i]*r[i]*r[i]))/pow(r[i],5);
+                    }
+                    break;
+
+                case -1: /* m = -1 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C51 * ((x[i]-I*y[i])*(21*pow(z[i],4) - 14*z[i]*z[i]*r[i]*r[i] + pow(r[i],4)))/pow(r[i],5);
+                    }
+                    break;
+
+                case 0: /* m = 0 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C50 * (63*pow(z[i],5) - 70*(z[i]*z[i]*z[i])*(r[i]*r[i]) + 15*z[i]*pow(r[i],4))/pow(r[i],5);
+                    }
+                    break;
+                
+                case 1: /* m = 1 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = -C51 * ((x[i]+I*y[i])*(21*pow(z[i],4) - 14*z[i]*z[i]*r[i]*r[i] + pow(r[i],4)))/pow(r[i],5);
+                    }
+                    break;
+                
+                case 2: /* m = 2 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C52 * (((x[i]+I*y[i])*(x[i]+I*y[i]))*(3*z[i]*z[i]*z[i] - z[i]*r[i]*r[i]))/pow(r[i],5);
+                    }
+                    break;
+                
+                case 3: /* m = 3 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = -C53 * (((x[i]+I*y[i])*(x[i]+I*y[i])*(x[i]+I*y[i]))*(9*z[i]*z[i] - r[i]*r[i]))/pow(r[i],5);
+                    }
+                    break;
+                
+                case 4: /* m = 4 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C54 * (cpow(x[i]+I*y[i],4)*z[i])/pow(r[i],5);
+                    }
+                    break;
+                
+                case 5: /* m = 5 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = -C55 * cpow(x[i]+I*y[i],5)/pow(r[i],5);
+                    }
+                    break;
+                    
+                /* incorrect m */
+                default: printf("<m> must be an integer between %d and %d!\n", -l, l); 
+                         break;
+            }
+            break;
+
+        /* l = 6 */
+        case 6: 
+            switch (m) 
+            {   
+                case -6: /* m = -6 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C66 * cpow(x[i]-I*y[i],6)/pow(r[i],6);
+                    }
+                    break;
+                
+                case -5: /* m = -5 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C65 * (cpow(x[i]-I*y[i],5)*z[i])/pow(r[i],6);
+                    }
+                    break;
+                
+                case -4: /* m = -4 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C64 * (cpow(x[i]-I*y[i],4)*(11*z[i]*z[i] - r[i]*r[i]))/pow(r[i],6);
+                    break;
+                
+                case -3: /* m = -3 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C63 * (((x[i]-I*y[i])*(x[i]-I*y[i])*(x[i]-I*y[i]))*(11*z[i]*z[i]*z[i] - 3*z[i]*r[i]*r[i]))/pow(r[i],6);
+                    }
+                    break;
+               
+                case -2: /* m = -2 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C62 * (((x[i]-I*y[i])*(x[i]-I*y[i]))*(33*pow(z[i],4) - 18*(z[i]*z[i])*(r[i]*r[i]) + pow(r[i],4)))/pow(r[i],6);
+                    }
+                    break;
+
+                case -1: /* m = -1 */
+                    for (i = 0; i < len; i++)
+                        Ylm[i] = C61 * ((x[i]-I*y[i])*(33*pow(z[i],5) - 30*(z[i]*z[i]*z[i])*(r[i]*r[i]) + 5*z[i]*pow(r[i],4)))/pow(r[i],6);
+                    break;
+
+                case 0: /* m = 0 */
+                    for (i = 0; i < len; i++) {                        
+                        Ylm[i] = C60 * (231*pow(z[i],6) - 315*pow(z[i],4)*(r[i]*r[i]) + 105*(z[i]*z[i])*pow(r[i],4) - 5*pow(r[i],6))/pow(r[i],6);
+                    }
+                    break;
+                
+                case 1: /* m = 1 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = -C61 * ((x[i]+I*y[i])*(33*pow(z[i],5) - 30*(z[i]*z[i]*z[i])*(r[i]*r[i]) + 5*z[i]*pow(r[i],4)))/pow(r[i],6);
+                    }
+                    break;
+                
+                case 2: /* m = 2 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C62 * (((x[i]+I*y[i])*(x[i]+I*y[i]))*(33*pow(z[i],4) - 18*(z[i]*z[i])*(r[i]*r[i]) + pow(r[i],4)))/pow(r[i],6);
+                    }
+                    break;
+                
+                case 3: /* m = 3 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = -C63 * (((x[i]+I*y[i])*(x[i]+I*y[i])*(x[i]+I*y[i]))*(11*z[i]*z[i]*z[i] - 3*z[i]*(r[i]*r[i])))/pow(r[i],6);
+                    }
+                    break;
+                
+                case 4: /* m = 4 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C64 * (cpow(x[i]+I*y[i],4)*(11*z[i]*z[i] - r[i]*r[i]))/pow(r[i],6);
+                    }
+                    break;
+                
+                case 5: /* m = 5 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = -C65 * (cpow(x[i]+I*y[i],5)*z[i])/pow(r[i],6);
+                    }
+                    break;
+                
+                case 6: /* m = 6 */
+                    for (i = 0; i < len; i++) {
+                        Ylm[i] = C66 * cpow(x[i]+I*y[i],6)/pow(r[i],6);
+                    }
+                    break;
+                    
+                /* incorrect m */
+                default: printf("<m> must be an integer between %d and %d!\n", -l, l); 
+                         break;
+            }
+            break;
+        
+        default: printf("<l> must be an integer between 0 and 6!\n"); break;
+    }
+    
+    if (l > 0) {
+        for (i = 0; i < len; i++) {
+            if (r[i] < 1e-10) Ylm[i] = 0.0;
+        }
+    }
+}
 
 
 /*
@@ -1719,4 +2119,321 @@ void read_vec(
             free(x_global);
         }
     }
+}
+
+
+/**
+ * @brief   Function to check the below-tag format
+ *          Note: used in readfiles.c for readion function
+ */
+void check_below_entries(FILE *ion_fp, char *tag) 
+{
+    int i;
+    char *str = malloc(L_STRING * sizeof(char));
+
+    str[0] = '\0';
+    fscanf(ion_fp, "%[^\n]%*c", str);
+    for (i = 0; i < strlen(str); i++) {
+        if (isdigit(str[i])) {
+            printf(RED"ERROR: Please remove the data in the same line as the %s tag in the ION file. All entries should be strictly below the %s tag.\n"RESET, tag, tag);
+            exit(EXIT_FAILURE);
+        }
+    }
+    free(str);
+}
+
+
+/**
+ * @brief   Check the input options in ion file
+ */
+int check_num_input(FILE *fp, void *array, char TYPE)
+{
+    int nums_now, bytes_now;
+    int bytes_consumed = 0, nums_read = 0;
+    char *str = malloc(L_STRING * sizeof(char));
+    str[0] = '\0';
+
+    if (TYPE != 'I' && TYPE != 'D') {
+        printf("ERROR: Unknown type\n");
+        exit(EXIT_FAILURE);
+    }
+
+    fscanf(fp,"%s",str);
+    fseek ( fp , -strlen(str) , SEEK_CUR );
+    
+    if (str[0] == '#') {
+        fscanf(fp, "%*[^\n]\n"); // skip current line
+        free(str);
+        return -1;
+    }
+    
+    fscanf(fp, "%[^\n]%*c", str);
+
+    if (TYPE == 'I') {
+        while ( ( nums_now = 
+                sscanf( str + bytes_consumed, "%d%n", (int *)array + nums_read, & bytes_now )
+                ) > 0 && nums_read < 10) {
+            bytes_consumed += bytes_now;
+            nums_read += nums_now;
+        }
+    } else if (TYPE == 'D') {
+        while ( ( nums_now = 
+                sscanf( str + bytes_consumed, "%lf%n", (double *)array + nums_read, & bytes_now )
+                ) > 0 && nums_read < 10) {
+            bytes_consumed += bytes_now;
+            nums_read += nums_now;
+        }
+    }
+    
+    free(str);
+    return nums_read;
+}
+
+/*
+ @ brief: function to calculate a 3x3 matrix times a vector
+*/
+void matrixTimesVec_3d(double *A, double *b, double *c) {
+#define A(i,j) A[i+j*3]
+    int i, j;
+    for (i = 0;  i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            c[i] += A(i,j) * b[j];
+        }
+    }
+#undef A
+}
+
+/*
+ @ brief: function to calculate a 3x3 matrix times a vector
+*/
+void matrixTimesVec_3d_complex(double *A, double _Complex *b, double _Complex *c) {
+#define A(i,j) A[i+j*3]
+    int i, j;
+    for (i = 0;  i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            c[i] += A(i,j) * b[j];
+        }
+    }
+#undef A
+}
+
+
+#if defined(USE_MKL)
+/**
+ * @brief   MKL multi-dimension FFT interface, real to complex, following conjugate even distribution. 
+ */
+void MKL_MDFFT_real(double *r2c_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_out, double _Complex *r2c_3doutput) {
+    DFTI_DESCRIPTOR_HANDLE my_desc_handle = NULL;
+    MKL_LONG status;
+    /********************************************************************/
+
+    status = DftiCreateDescriptor(&my_desc_handle,
+                                  DFTI_DOUBLE, DFTI_REAL, 3, dim_sizes);
+    status = DftiSetValue(my_desc_handle,
+                          DFTI_CONJUGATE_EVEN_STORAGE, DFTI_COMPLEX_COMPLEX);
+    status = DftiSetValue(my_desc_handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE);
+    status = DftiSetValue(my_desc_handle, DFTI_OUTPUT_STRIDES, strides_out);
+
+    status = DftiCommitDescriptor(my_desc_handle);
+    status = DftiComputeForward(my_desc_handle, r2c_3dinput, r2c_3doutput);
+    status = DftiFreeDescriptor(&my_desc_handle);
+}
+
+/**
+ * @brief   MKL multi-dimension FFT interface, complex to complex
+ */
+void MKL_MDFFT(double _Complex *c2c_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_out, double _Complex *c2c_3doutput)
+{
+    DFTI_DESCRIPTOR_HANDLE my_desc_handle = NULL;
+    MKL_LONG status;
+    /********************************************************************/
+
+    status = DftiCreateDescriptor(&my_desc_handle,
+                                  DFTI_DOUBLE, DFTI_COMPLEX, 3, dim_sizes);
+    status = DftiSetValue(my_desc_handle,
+                          DFTI_COMPLEX_COMPLEX, DFTI_COMPLEX_COMPLEX);
+    status = DftiSetValue(my_desc_handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE);
+    status = DftiSetValue(my_desc_handle, DFTI_OUTPUT_STRIDES, strides_out);
+
+    status = DftiCommitDescriptor(my_desc_handle);
+    status = DftiComputeForward(my_desc_handle, c2c_3dinput, c2c_3doutput);
+    status = DftiFreeDescriptor(&my_desc_handle);
+}
+
+
+/**
+ * @brief   MKL multi-dimension iFFT interface, complex to real, following conjugate even distribution. 
+ */
+void MKL_MDiFFT_real(double _Complex *c2r_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_in, double *c2r_3doutput) {
+    DFTI_DESCRIPTOR_HANDLE my_desc_handle = NULL;
+    MKL_LONG status;
+    /********************************************************************/
+
+    status = DftiCreateDescriptor(&my_desc_handle,
+                                  DFTI_DOUBLE, DFTI_REAL, 3, dim_sizes);
+    status = DftiSetValue(my_desc_handle,
+                          DFTI_CONJUGATE_EVEN_STORAGE, DFTI_COMPLEX_COMPLEX);
+    status = DftiSetValue(my_desc_handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE);
+    status = DftiSetValue(my_desc_handle, DFTI_INPUT_STRIDES, strides_in);
+    status = DftiCommitDescriptor(my_desc_handle);
+    status = DftiComputeBackward(my_desc_handle, c2r_3dinput, c2r_3doutput);
+    status = DftiFreeDescriptor(&my_desc_handle);
+
+    // scale the result to make it the same as definition of IFFT
+    int N = dim_sizes[2]*dim_sizes[1]*dim_sizes[0];
+    for (int i = 0; i < N; i++) {
+        c2r_3doutput[i] /= N;
+    }
+}
+
+/**
+ * @brief   MKL multi-dimension iFFT interface, complex to complex. 
+ */
+void MKL_MDiFFT(double _Complex *c2c_3dinput, MKL_LONG *dim_sizes, MKL_LONG *strides_out, double _Complex *c2c_3doutput)
+{
+    DFTI_DESCRIPTOR_HANDLE my_desc_handle = NULL;
+    MKL_LONG status;
+    /********************************************************************/
+    
+    status = DftiCreateDescriptor(&my_desc_handle,
+                                  DFTI_DOUBLE, DFTI_COMPLEX, 3, dim_sizes);
+    status = DftiSetValue(my_desc_handle,
+                          DFTI_COMPLEX_COMPLEX, DFTI_COMPLEX_COMPLEX);
+    status = DftiSetValue(my_desc_handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE);
+    status = DftiSetValue(my_desc_handle, DFTI_OUTPUT_STRIDES, strides_out);
+
+    status = DftiCommitDescriptor(my_desc_handle);
+    status = DftiComputeBackward(my_desc_handle, c2c_3dinput, c2c_3doutput);
+    status = DftiFreeDescriptor(&my_desc_handle);
+
+    // scale the result to make it the same as definition of IFFT
+    int N = dim_sizes[2]*dim_sizes[1]*dim_sizes[0];
+    for (int i = 0; i < N; i++) {
+        c2c_3doutput[i] /= N;
+    }
+}
+#endif
+
+
+#if defined(USE_FFTW)
+/**
+ * @brief   FFTW multi-dimension FFT interface, complex to complex. 
+ */
+void FFTW_MDFFT(int *dim_sizes, double _Complex *c2c_3dinput, double _Complex *c2c_3doutput) {
+    fftw_complex *in, *out;
+    fftw_plan p;
+    int N = dim_sizes[0] * dim_sizes[1] * dim_sizes[2];
+    p = fftw_plan_dft(3, dim_sizes, c2c_3dinput, c2c_3doutput, FFTW_FORWARD, FFTW_ESTIMATE);
+    fftw_execute(p);
+    fftw_destroy_plan(p);
+}
+
+/**
+ * @brief   FFTW multi-dimension iFFT interface, complex to complex. 
+ */
+void FFTW_MDiFFT(int *dim_sizes, double _Complex *c2c_3dinput, double _Complex *c2c_3doutput) {
+    fftw_complex *in, *out;
+    fftw_plan p;
+    int N = dim_sizes[0] * dim_sizes[1] * dim_sizes[2], i;
+    p = fftw_plan_dft(3, dim_sizes, c2c_3dinput, c2c_3doutput, FFTW_BACKWARD, FFTW_ESTIMATE);
+    fftw_execute(p);
+    fftw_destroy_plan(p);
+    for (i = 0; i < N; i++)
+        c2c_3doutput[i] /= N;
+}
+
+/**
+ * @brief   FFTW multi-dimension FFT interface, real to complex. 
+ */
+void FFTW_MDFFT_real(int *dim_sizes, double *r2c_3dinput, double _Complex *r2c_3doutput) {
+    fftw_complex *in, *out;
+    fftw_plan p;
+    int N = dim_sizes[0] * dim_sizes[1] * dim_sizes[2];
+    p = fftw_plan_dft_r2c(3, dim_sizes, r2c_3dinput, r2c_3doutput, FFTW_ESTIMATE);
+    fftw_execute(p);
+    fftw_destroy_plan(p);
+}
+
+/**
+ * @brief   FFTW multi-dimension FFT interface, complex to real. 
+ */
+void FFTW_MDiFFT_real(int *dim_sizes, double _Complex *c2r_3dinput, double *c2r_3doutput) {
+    fftw_complex *in, *out;
+    fftw_plan p;
+    int N = dim_sizes[0] * dim_sizes[1] * dim_sizes[2], i;
+    p = fftw_plan_dft_c2r(3, dim_sizes, c2r_3dinput, c2r_3doutput, FFTW_ESTIMATE);
+    fftw_execute(p);
+    fftw_destroy_plan(p);
+    for (i = 0; i < N; i++)
+        c2r_3doutput[i] /= N;
+}
+#endif
+
+
+/**
+ * @brief   Function to compute exponential integral E_n(x)
+ *          From Numerical Recipes
+ */
+double expint(const int n, const double x)
+{
+    static const int MAXIT = 200;
+    static const double EULER = 0.577215664901533;
+    double EPS, BIG;
+    EPS = DBL_EPSILON;
+    BIG = DBL_MAX * EPS;
+    
+    int i, ii, nm1;
+    double a, b, c, d, del, fact, h, psi, ans;
+
+    nm1 = n - 1;
+    if (n < 0 || x < 0.0 || (x==0.0 && (n==0 || n==1))) {
+        printf("ERROR: bad arguments in expint\n");
+        exit(-1);
+    }
+    
+    if (n == 0) 
+        ans = exp(-x)/x;
+    else if (x == 0.0)
+        ans = 1./nm1;
+    else {
+        if (x > 1.0) {
+            b = x+n;
+            c = BIG;
+            d = 1.0/b;
+            h = d;
+            for (i = 1; i <= MAXIT; i++) {
+                a = -i*(nm1+i);
+                b += 2.0;
+                d = 1.0/(a*d+b);
+                c = b+a/c;
+                del = c*d;
+                h *= del;
+                if (fabs(del-1.0) <= EPS) {
+                    ans=h*exp(-x);
+                    return ans; 
+                }
+            }
+            printf("ERROR: Continued fraction failed in expint\n");
+            exit(-1);
+        } else {
+            ans = (nm1!=0 ? 1.0/nm1 : -log(x)-EULER);
+            fact=1.0;
+            for (i=1; i <= MAXIT; i++) {
+                fact *= -x/i;
+                if (i != nm1) 
+                    del = -fact/(i-nm1);
+                else {
+                    psi = -EULER;
+                    for (ii=1;ii<=nm1;ii++) 
+                        psi += 1.0/ii;
+                    del = fact*(-log(x)+psi);
+                }
+                ans += del;
+                if (fabs(del) < fabs(ans)*EPS) return ans;
+            }
+            printf("ERROR: Series failed in expint\n");
+            exit(-1);
+        }
+    }
+    return ans;
 }

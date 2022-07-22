@@ -228,11 +228,13 @@ void dims_divide_kbd(
  * @param npk (OUT) Number of kpoint groups.
  * @param npp (OUT) Number of band groups.
  * @param npd (OUT) Number of domain groups.
+ * @param minsize   Minimum size in domain parallelization
+ * @param isfock    Flag for if it's hybrid calculation
  **/
 void dims_divide_skbd(
     const int Nspin, const int Nk, const int Ns, 
     const int *gridsizes, const int np, 
-    int *nps, int *npk, int *npb, int *npd);
+    int *nps, int *npk, int *npb, int *npd, int minsize, int isfock);
 
 
 /**
@@ -312,6 +314,14 @@ void Free_D2D_Target(D2D_OBJ *d2d_sender, D2D_OBJ *d2d_recvr, MPI_Comm send_comm
 void D2D(D2D_OBJ *d2d_sender, D2D_OBJ *d2d_recvr, int *gridsizes, int *sDMVert, double *sdata, int *rDMVert, 
          double *rdata, MPI_Comm send_comm, int *sdims, MPI_Comm recv_comm, int *rdims, MPI_Comm union_comm);
 
+/**
+ * @brief   Transfer complex data from one 3-d Domain Decomposition to another.
+ * 
+ *          See the description of D2D
+ */
+void D2D_kpt(D2D_OBJ *d2d_sender, D2D_OBJ *d2d_recvr, int *gridsizes, int *sDMVert, double _Complex *sdata, int *rDMVert,
+         double _Complex *rdata, MPI_Comm send_comm, int *sdims, MPI_Comm recv_comm, int *rdims, MPI_Comm union_comm);
+         
 #ifdef USE_DP_SUBEIG
 
 /** @ brief   Copy row-major matrix block

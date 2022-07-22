@@ -32,6 +32,12 @@
 #include "initialization.h"
 #include "electrostatics.h"
 #include "energy.h"
+#include "vdWDFstress.h"
+#include "d3forceStress.h"
+#include "MGGAstress.h"
+#include "spinOrbitCoupling.h"
+#include "exactExchangePressure.h"
+#include "sqProperties.h"
 
 #define TEMP_TOL 1e-12
 
@@ -47,6 +53,14 @@ void Calculate_electronic_pressure(SPARC_OBJ *pSPARC) {
     // find exchange-correlation component of pressure
     t1 = MPI_Wtime();
     Calculate_XC_pressure(pSPARC);
+    if ((pSPARC->mGGAflag == 1) && (pSPARC->countSCF > 1)) { // metaGGA pressure is related to wavefunction psi directly; it needs to be computed outside of function Calculate_XC_pressure
+        if (pSPARC->isGammaPoint) {
+            Calculate_XC_stress_mGGA_psi_term(pSPARC); // the function is in file mgga/mgga.c
+        }
+        else {
+            Calculate_XC_stress_mGGA_psi_term_kpt(pSPARC); // the function is in file mgga/mgga.c
+        }
+    }
     t2 = MPI_Wtime();
 #ifdef DEBUG
     if(!rank) printf("Time for calculating exchnage-correlation pressure components: %.3f ms\n", (t2 - t1)*1e3);
@@ -62,15 +76,22 @@ void Calculate_electronic_pressure(SPARC_OBJ *pSPARC) {
     
     // find nonlocal pressure components
     t1 = MPI_Wtime();
-    if (pSPARC->isGammaPoint)
-        Calculate_nonlocal_pressure(pSPARC);
-    else
-        Calculate_nonlocal_pressure_kpt(pSPARC);  
+    Calculate_nonlocal_pressure(pSPARC);
     t2 = MPI_Wtime();
 #ifdef DEBUG
     if(!rank) printf("Time for calculating nonlocal pressure components: %.3f ms\n", (t2 - t1)*1e3);
 #endif
     
+    if (pSPARC->usefock > 0) {
+        // find exact exchange pressure components
+        t1 = MPI_Wtime();
+        Calculate_exact_exchange_pressure(pSPARC);
+        t2 = MPI_Wtime();
+    #ifdef DEBUG
+        if(!rank) printf("Time for calculating exact exchange pressure components: %.3f ms\n", (t2 - t1)*1e3);
+    #endif
+    }    
+
 	// find total pressure    
  	if(!rank){
  	    // Define measure of unit cell
@@ -83,6 +104,7 @@ void Calculate_electronic_pressure(SPARC_OBJ *pSPARC) {
             cell_measure *= pSPARC->range_z;
         		
  		pSPARC->pres = (-2 * (pSPARC->Eband + pSPARC->Escc) + pSPARC->pres_xc + pSPARC->pres_el + pSPARC->pres_nl);
+        if (pSPARC->usefock > 1) pSPARC->pres += pSPARC->pres_exx; 
  		pSPARC->pres /= (-3 * cell_measure); // measure = volume for 3D, area for 2D, and length for 1D.
  	}
 #ifdef DEBUG    
@@ -107,7 +129,9 @@ void Calculate_XC_pressure(SPARC_OBJ *pSPARC) {
 
     if(strcmpi(pSPARC->XC,"LDA_PW") == 0 || strcmpi(pSPARC->XC,"LDA_PZ") == 0){
         pSPARC->pres_xc = 3 * pSPARC->Exc - pSPARC->Exc_corr;
-    } else if(strcmpi(pSPARC->XC,"GGA_PBE") == 0 || strcmpi(pSPARC->XC,"GGA_RPBE") == 0 || strcmpi(pSPARC->XC,"GGA_PBEsol") == 0){
+    } else if(strcmpi(pSPARC->XC,"GGA_PBE") == 0 || strcmpi(pSPARC->XC,"GGA_RPBE") == 0 || strcmpi(pSPARC->XC,"GGA_PBEsol") == 0 
+            || strcmpi(pSPARC->XC,"PBE0") == 0 || strcmpi(pSPARC->XC,"HF") == 0 || strcmpi(pSPARC->XC,"HSE") == 0
+            || strcmpi(pSPARC->XC,"vdWDF1") == 0 || strcmpi(pSPARC->XC,"vdWDF2") == 0 || strcmpi(pSPARC->XC,"SCAN") == 0){
         pSPARC->pres_xc = 3 * pSPARC->Exc - pSPARC->Exc_corr;
         int DMnd, i;
         DMnd = (2*pSPARC->Nspin - 1) * pSPARC->Nd_d;
@@ -162,6 +186,16 @@ void Calculate_XC_pressure(SPARC_OBJ *pSPARC) {
         // deallocate
         free(Drho_x); free(Drho_y); free(Drho_z);
     } 
+
+    if (pSPARC->d3Flag == 1) {
+        // if (!rank) printf("XC pressure before d3 %9.6E\n", pSPARC->pres_xc);
+        d3_grad_cell_stress(pSPARC);
+        // if (!rank) printf("XC pressure after d3 %9.6E\n", pSPARC->pres_xc);
+    }
+
+    if (pSPARC->vdWDFFlag != 0) { // either vdW_DF1 or vdW_DF2, compute the contribution of nonlinear correlation of vdWDF on stress/pressure
+        Calculate_XC_stress_vdWDF(pSPARC); // the function is in file vdW/vdWDF/vdWDF.c
+    }
 
     if (pSPARC->NLCC_flag) {
         double Calculate_XC_pressure_nlcc(SPARC_OBJ *pSPARC);
@@ -778,12 +812,27 @@ void Calculate_local_pressure(SPARC_OBJ *pSPARC) {
 
 }
 
-
+/**
+ * @brief    Calculate nonlocal pressure components.
+ */
+void Calculate_nonlocal_pressure(SPARC_OBJ *pSPARC) {
+    if (pSPARC->isGammaPoint) {
+        if (pSPARC->SQFlag == 1) 
+            Calculate_nonlocal_pressure_SQ(pSPARC);
+        else
+            Calculate_nonlocal_pressure_linear(pSPARC);
+    } else {
+        if (pSPARC->Nspinor == 1)
+            Calculate_nonlocal_pressure_kpt(pSPARC);  
+        else if (pSPARC->Nspinor == 2)
+            Calculate_nonlocal_pressure_kpt_spinor(pSPARC);
+    }
+}
 
 /**
  * @brief    Calculate nonlocal pressure components.
  */
-void Calculate_nonlocal_pressure(SPARC_OBJ *pSPARC)
+void Calculate_nonlocal_pressure_linear(SPARC_OBJ *pSPARC)
 {
     if (pSPARC->spincomm_index < 0 || pSPARC->bandcomm_index < 0 || pSPARC->dmcomm == MPI_COMM_NULL) return;
     int rank;
@@ -838,7 +887,7 @@ void Calculate_nonlocal_pressure(SPARC_OBJ *pSPARC)
         count = 0;
         for(spn_i = 0; spn_i < nspin; spn_i++) {
         // find dPsi in direction dim
-            Gradient_vectors_dir(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb+spn_i*size_s, pSPARC->Yorb+spn_i*size_s, dim, pSPARC->dmcomm);
+            Gradient_vectors_dir(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb+spn_i*size_s, pSPARC->Yorb, dim, pSPARC->dmcomm);
             beta = alpha + pSPARC->IP_displ[pSPARC->n_atom] * ncol * (nspin * (dim+1) + count);
             for (ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
                 if (! pSPARC->nlocProj[ityp].nproj) continue; // this is typical for hydrogen
@@ -850,7 +899,7 @@ void Calculate_nonlocal_pressure(SPARC_OBJ *pSPARC)
                     dx_rc = (double *)malloc( ndc * ncol * sizeof(double));
                     atom_index = pSPARC->Atom_Influence_nloc[ityp].atom_index[iat];
                     for (n = 0; n < ncol; n++) {
-                        dx_ptr = pSPARC->Yorb + spn_i * size_s + n * DMnd;
+                        dx_ptr = pSPARC->Yorb + n * DMnd;
                         dx_rc_ptr = dx_rc + n * ndc;
                         for (i = 0; i < ndc; i++) {
                             indx = pSPARC->Atom_Influence_nloc[ityp].grid_pos[iat][i];
@@ -993,7 +1042,7 @@ void Calculate_nonlocal_pressure_kpt(SPARC_OBJ *pSPARC)
     double Lx = pSPARC->range_x;
     double Ly = pSPARC->range_y;
     double Lz = pSPARC->range_z;
-    double k1, k2, k3, theta;
+    double k1, k2, k3, theta, kpt_vec;
     double complex bloch_fac, a, b;
 #ifdef DEBUG 
     if (!rank) printf("Start Calculating nonlocal pressure\n");
@@ -1045,8 +1094,9 @@ void Calculate_nonlocal_pressure_kpt(SPARC_OBJ *pSPARC)
                 k1 = pSPARC->k1_loc[kpt];
                 k2 = pSPARC->k2_loc[kpt];
                 k3 = pSPARC->k3_loc[kpt];
+                kpt_vec = (dim == 0) ? k1 : ((dim == 1) ? k2 : k3);
                 // find dPsi in direction dim
-                Gradient_vectors_dir_kpt(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb_kpt+spn_i*size_s+kpt*size_k, pSPARC->Yorb_kpt+spn_i*size_s+kpt*size_k, dim, kpt, pSPARC->dmcomm);
+                Gradient_vectors_dir_kpt(pSPARC, DMnd, pSPARC->DMVertices_dmcomm, ncol, 0.0, pSPARC->Xorb_kpt+spn_i*size_s+kpt*size_k, pSPARC->Yorb_kpt, dim, kpt_vec, pSPARC->dmcomm);
                 beta = alpha + pSPARC->IP_displ[pSPARC->n_atom] * ncol * (Nk * nspin* (dim + 1) + count);
                 for (ityp = 0; ityp < pSPARC->Ntypes; ityp++) {
                     if (! pSPARC->nlocProj[ityp].nproj) continue; // this is typical for hydrogen
@@ -1061,7 +1111,7 @@ void Calculate_nonlocal_pressure_kpt(SPARC_OBJ *pSPARC)
                         dx_rc = (double complex *)malloc( ndc * ncol * sizeof(double complex));
                         atom_index = pSPARC->Atom_Influence_nloc[ityp].atom_index[iat];
                         for (n = 0; n < ncol; n++) {
-                            dx_ptr = pSPARC->Yorb_kpt + spn_i * size_s + kpt * size_k + n * DMnd;
+                            dx_ptr = pSPARC->Yorb_kpt + n * DMnd;
                             dx_rc_ptr = dx_rc + n * ndc;
                             for (i = 0; i < ndc; i++) {
                                 indx = pSPARC->Atom_Influence_nloc[ityp].grid_pos[iat][i];

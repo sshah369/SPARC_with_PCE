@@ -158,6 +158,78 @@ Upon successful execution of the `sparc` code, depending on the calculations per
 
   Information necessary to perform a restarted QMD calculation. 
 
+### libPCE:
+
+SPARC includes support for libPCE, a parallel computation engine that includes distributed GPU support for Chebyshev-Filtered Subspace Iteration calculations.
+
+To build SPARC with libPCE support (with eigensolves via Cusolver) from scratch on PACE, the following can be used:
+
+``` 
+module load cuda/11.2
+git clone https://github.com/sshah369/SPARC_with_PCE.git
+cd SPARC_with_PCE
+git checkout Hua_Cyclic_Merge_1.0
+git submodule update --init --recursive
+cd Hamiltonian
+nano Makefile.pace.icc 
+# Set USE_ELPA=0, USE_GPU=1
+make -f Makefile.pace.icc
+cd ../src
+nano makefile
+# Set USE_ELPA=0, USE_GPU=1 inside the USE_PCE=1 branch
+make
+```
+
+To build SPARC with libPCE support (with eigensolves via CPU ELPA) from scratch on PACE, the following can be used:
+
+
+``` 
+module load elpa
+git clone https://github.com/sshah369/SPARC_with_PCE.git
+cd SPARC_with_PCE
+git checkout Hua_Cyclic_Merge_1.0
+git submodule update --init --recursive
+cd Hamiltonian
+nano Makefile.pace.icc 
+# Set USE_ELPA=1, USE_GPU=0, set CA3DMM_Makefile=icc-mkl-anympi.make, update ELPA_ variables if needed
+make -f Makefile.pace.icc
+cd ../src
+nano makefile
+# Set USE_ELPA=1, USE_GPU=0 inside the USE_PCE=1 branch, update ELPA_ variables if needed
+make
+```
+
+IF you have elpa built with GPU support (not natively available on PACE), you can build with eigensolves via GPU ELPA from scratch with the following:
+
+``` 
+#Load your ELPA with GPU module
+module load elpa-gpu
+
+git clone https://github.com/sshah369/SPARC_with_PCE.git
+cd SPARC_with_PCE
+git checkout Hua_Cyclic_Merge_1.0
+git submodule update --init --recursive
+cd Hamiltonian
+nano Makefile.pace.icc 
+# Set USE_ELPA=1, USE_GPU=1, set CA3DMM_Makefile=icc-mkl-nvcc-anympi.make, update ELPA_ variables if needed
+make -f Makefile.pace.icc
+cd ../src
+nano makefile
+# Set USE_ELPA=1, USE_GPU=1 inside the USE_PCE=1 branch, update ELPA_ variables if needed
+make
+```
+
+
+
+Certain environment variables are used in SPARC to control the use of libPCE during the SPARC code as indicated below. 
+
+#### SPARC - LIBPCE Environment Variable
+| Name                         | Use                                                          | Notes                               | Default    | Values                                                                               |
+|------------------------------|--------------------------------------------------------------|-------------------------------------|------------|--------------------------------------------------------------------------------------|
+| LIBPCE_USE_GPU               | Determine if PCE should use GPU (if enabled at compile time) | GPU must be enabled at compile time | Non-truthy | Truthy: Use GPU Non-Truthy: Use CPU                                                  |
+| LIBPCE_DO_NONLOCAL           | Determine if nonlocal calculations should be performed       | Debug only                          | 1          | Truth: Include nonlocal calculations Non-Truthy: Skip nonlocal calculations          |
+| LIBPCE_USE_SCALAPACK_MATMATS | Use the SCALAPACK matrix-matrix backend rather than CA3DMM   | Probably should not be used         | Non-truthy | Truthy: Use scalapack backend for matmats Non-Truthy: Use CA3DMM backend for matmats |
+
 
 ### (7) Citation:
 
@@ -176,3 +248,4 @@ If you publish work using/regarding SPARC, please cite some of the following art
 
   * Preliminary developments
     * U.S. National Science Foundation: 1553212, 1663244, and 1333500
+

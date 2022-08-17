@@ -168,7 +168,6 @@ To build SPARC with libPCE support (with eigensolves via Cusolver) from scratch 
 module load cuda/11.2
 git clone https://github.com/sshah369/SPARC_with_PCE.git
 cd SPARC_with_PCE
-git checkout Hua_Cyclic_Merge_1.0
 git submodule update --init --recursive
 cd Hamiltonian
 nano Makefile.pace.icc 
@@ -187,7 +186,6 @@ To build SPARC with libPCE support (with eigensolves via CPU ELPA) from scratch 
 module load elpa
 git clone https://github.com/sshah369/SPARC_with_PCE.git
 cd SPARC_with_PCE
-git checkout Hua_Cyclic_Merge_1.0
 git submodule update --init --recursive
 cd Hamiltonian
 nano Makefile.pace.icc 
@@ -207,7 +205,6 @@ module load elpa-gpu
 
 git clone https://github.com/sshah369/SPARC_with_PCE.git
 cd SPARC_with_PCE
-git checkout Hua_Cyclic_Merge_1.0
 git submodule update --init --recursive
 cd Hamiltonian
 nano Makefile.pace.icc 
